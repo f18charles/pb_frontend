@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Piggy Bank</title>
+    <!-- Bootstrap 5 -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --primary-green: #2c6e2f;
+            --primary-green-dark: #1f4f21;
+            --accent-blue: #7bc5d9;
+            --soft-bg: #f8faf4;
+        }
+        
+        body {
+            background: var(--soft-bg);
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        /* Loading Overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: var(--soft-bg);
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+        
+        .render-warning {
+            background: #fff3e0;
+            border-left: 4px solid #f4a261;
+            padding: 12px 20px;
+            border-radius: 12px;
+            max-width: 400px;
+            margin-top: 20px;
+        }
+        
+        /* Navbar */
+        .navbar {
+            background: linear-gradient(95deg, var(--primary-green-dark), var(--primary-green));
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .navbar-brand {
+            font-weight: 700;
+            font-size: 1.4rem;
+        }
+        
+        /* Sidebar */
+        .sidebar-link {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 18px;
+            margin-bottom: 6px;
+            color: #2c3e2f;
+            text-decoration: none;
+            border-radius: 40px;
+            font-weight: 500;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        
+        .sidebar-link:hover {
+            background: #e8f5e8;
+        }
+        
+        .sidebar-link.active {
+            background: #c7e9f0;
+            color: var(--primary-green-dark);
+            font-weight: 600;
+        }
+        
+        .sidebar-link i {
+            width: 24px;
+            font-size: 1.2rem;
+        }
+        
+        /* Cards */
+        .card {
+            border: none;
+            border-radius: 24px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        .stat-card {
+            border-left: 5px solid var(--primary-green);
+        }
+        
+        .btn-primary {
+            background-color: var(--primary-green);
+            border-color: var(--primary-green-dark);
+        }
+        
+        .btn-primary:hover {
+            background-color: var(--primary-green-dark);
+        }
+        
+        .amount-positive {
+            color: var(--primary-green);
+            font-weight: 600;
+        }
+        
+        .amount-negative {
+            color: #dc3545;
+        }
+        
+        .footer {
+            font-size: 0.75rem;
+            color: #8b9a87;
+            text-align: center;
+            padding: 20px;
+            border-top: 1px solid #e0e8dc;
+            margin-top: 30px;
+        }
+        
+        @media (max-width: 768px) {
+            .sidebar-link {
+                padding: 8px 12px;
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="loading-overlay">
+    <div class="spinner-border text-success mb-3" style="width: 3.5rem; height: 3.5rem;" role="status"></div>
+    <h4 class="text-success">🐷 Piggy Bank</h4>
+    <p class="text-muted mt-2">Loading your finances...</p>
+    <div class="render-warning">
+        <i class="bi bi-cloud-upload"></i> <strong>Render Free Tier</strong><br>
+        Backend may take 20-40 seconds to wake up. Please wait!
+    </div>
+</div>
+
+<!-- Main App -->
+<div id="app" style="display: none;">
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark px-3 px-md-4">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#" id="logoLink">
+                <i class="bi bi-piggy-bank-fill me-2"></i>Piggy Bank
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto align-items-center gap-2">
+                    <li class="nav-item">
+                        <span class="text-white-50" id="userEmail">Loading...</span>
+                    </li>
+                    <li class="nav-item">
+                        <button class="btn btn-sm btn-outline-light" id="logoutBtn">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid px-3 px-md-4 mt-4">
+        <div class="row g-4">
+            <!-- Sidebar -->
+            <div class="col-md-3 col-lg-2">
+                <div class="sidebar-menu">
+                    <div class="sidebar-link active" data-page="dashboard">
+                        <i class="bi bi-speedometer2"></i> Dashboard
+                    </div>
+                    <div class="sidebar-link" data-page="transactions">
+                        <i class="bi bi-receipt"></i> Transactions
+                    </div>
+                    <div class="sidebar-link" data-page="budgets">
+                        <i class="bi bi-pie-chart"></i> Budgets
+                    </div>
+                    <div class="sidebar-link" data-page="goals">
+                        <i class="bi bi-trophy"></i> Goals
+                    </div>
+                    <div class="sidebar-link" data-page="insights">
+                        <i class="bi bi-graph-up"></i> Insights
+                    </div>
+                    <div class="sidebar-link" data-page="categories">
+                        <i class="bi bi-tags"></i> Categories
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dynamic Content Area -->
+            <div class="col-md-9 col-lg-10">
+                <div id="pageContent">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-success"></div>
+                        <p class="mt-2 text-muted">Loading page...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        <i class="bi bi-database"></i> Backend on Render Free Tier — First request may take 20-40s to wake up
+    </div>
+</div>
+
+<!-- Main JavaScript -->
+<script>
+    // ==================== CONFIGURATION ====================
+    const API_BASE = 'https://piggy-bank-lod0.onrender.com/api/v1';
+    let authToken = localStorage.getItem('piggy_token');
+    let currentUser = null;
+    let chartInstance = null;
+
+    // ==================== UTILITIES ====================
+    function showLoading(show) {
+        const overlay = document.getElementById('loadingOverlay');
+        const app = document.getElementById('app');
+        if (show) {
+            overlay.style.display = 'flex';
+            app.style.display = 'none';
+        } else {
+            overlay.style.display = 'none';
+            app.style.display = 'block';
+        }
+    }
+
+    function formatCurrency(amount) {
+        return `KES ${(amount || 0).toFixed(2)}`;
+    }
+
+    function formatDate(dateString) {
+        if (!dateString) return '—';
+        return new Date(dateString).toLocaleDateString();
+    }
+
+    // ==================== API CALLS ====================
+    async function apiFetch(endpoint, options = {}) {
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers
+        };
+        
+        if (authToken) {
+            headers['Authorization'] = `Bearer ${authToken}`;
+        }
+        
+        const response = await fetch(`${API_BASE}${endpoint}`, {
+            ...options,
+            headers
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            if (response.status === 401) {
+                logout();
+                throw new Error('Session expired');
+            }
+            throw new Error(data.error || data.message || 'Request failed');
+        }
+        
+        return data;
+    }
+
+    // ==================== AUTH ====================
+    async function login(email, password) {
+        const response = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Login failed');
+        authToken = data.data.token;
+        currentUser = data.data.user;
+        localStorage.setItem('piggy_token', authToken);
+        return currentUser;
+    }
+
+    async function register(fullName, email, password) {
+        const response = await fetch(`${API_BASE}/auth/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ full_name: fullName, email, password })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Registration failed');
+        authToken = data.data.token;
+        currentUser = data.data.user;
+        localStorage.setItem('piggy_token', authToken);
+        return currentUser;
+    }
+
+    function logout() {
+        localStorage.removeItem('piggy_token');
+        authToken = null;
+        currentUser = null;
+        showAuthModal();
+    }
+
+    async function loadUserProfile() {
+        try {
+            const response = await apiFetch('/auth/profile');
+            currentUser = response.data;
+            document.getElementById('userEmail').innerText = currentUser.email;
+        } catch (err) {
+            console.error('Profile error:', err);
+        }
+    }
+
+    // ==================== AUTH MODAL ====================
+    function showAuthModal() {
+        // Hide main app if visible
+        document.getElementById('app').style.display = 'none';
+        document.getElementById('loadingOverlay').style.display = 'flex';
+        
+        const modalHtml = `
+            <div class="modal fade" id="authModal" tabindex="-1" data-bs-backdrop="static" style="display: block;">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content rounded-4">
+                        <div class="modal-header bg-success bg-opacity-10 border-0">
+                            <h5 class="modal-title"><i class="bi bi-piggy-bank-fill"></i> Piggy Bank</h5>
+                        </div>
+                        <div class="modal-body">
+                            <ul class="nav nav-tabs mb-3" id="authTab" role="tablist">
+                                <li class="nav-item">
+                                    <button class="nav-link active" id="loginTabBtn" data-bs-toggle="tab" data-bs-target="#loginPanel">Login</button>
+                                </li>
+                                <li class="nav-item">
+                                    <button class="nav-link" id="registerTabBtn" data-bs-toggle="tab" data-bs-target="#registerPanel">Register</button>
+                                </li>
+                            </ul>
+                            <div class="tab-content">
+                                <div class="tab-pane fade show active" id="loginPanel">
+                                    <input type="email" id="loginEmail" class="form-control mb-2" placeholder="Email">
+                                    <input type="password" id="loginPassword" class="form-control mb-3" placeholder="Password">
+                                    <button class="btn btn-success w-100" id="doLoginBtn">Sign In</button>
+                                </div>
+                                <div class="tab-pane fade" id="registerPanel">
+                                    <input type="text" id="regName" class="form-control mb-2" placeholder="Full Name">
+                                    <input type="email" id="regEmail" class="form-control mb-2" placeholder="Email">
+                                    <input type="password" id="regPassword" class="form-control mb-3" placeholder="Password (min 8 chars)">
+                                    <button class="btn btn-outline-success w-100" id="doRegisterBtn">Create Account</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-backdrop fade show"></div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        // Load Bootstrap modal properly
+        const modalElement = document.getElementById('authModal');
+        const modal = new bootstrap.Modal(modalElement, { backdrop: 'static', keyboard: false });
+        modal.show();
+        
+        // Login handler
+        document.getElementById('doLoginBtn').onclick = async () => {
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+            if (!email || !password) return alert('Please enter email and password');
+            
+            try {
+                showLoading(true);
+                await login(email, password);
+                modal.hide();
+                document.getElementById('authModal')?.remove();
+                document.querySelector('.modal-backdrop')?.remove();
+                await initApp();
+            } catch (err) {
+                alert('Login failed: ' + err.message);
+                showLoading(false);
+            }
+        };
+        
+        // Register handler
+        document.getElementById('doRegisterBtn').onclick = async () => {
+            const name = document.getElementById('regName').value;
+            const email = document.getElementById('regEmail').value;
+            const password = document.getElementById('regPassword').value;
+            if (!name || !email || password.length < 8) {
+                return alert('Please fill all fields (password min 8 chars)');
+            }
+            
+            try {
+                showLoading(true);
+                await register(name, email, password);
+                modal.hide();
+                document.getElementById('authModal')?.remove();
+                document.querySelector('.modal-backdrop')?.remove();
+                await initApp();
+            } catch (err) {
+                alert('Registration failed: ' + err.message);
+                showLoading(false);
+            }
+        };
+    }
+
+    // ==================== PAGE LOADING ====================
+    async function loadPage(pageName) {
+        const contentDiv = document.getElementById('pageContent');
+        if (!contentDiv) return;
+        
+        // Update active sidebar
+        document.querySelectorAll('.sidebar-link').forEach(link => {
+            link.classList.remove('active');
+            if (link.dataset.page === pageName) {
+                link.classList.add('active');
+            }
+        });
+        
+        try {
+            // Fetch the page HTML
+            const response = await fetch(`pages/${pageName}.html`);
+            if (!response.ok) throw new Error(`Failed to load ${pageName} page`);
+            let html = await response.text();
+            contentDiv.innerHTML = html;
+            
+            // Execute page-specific initialization if it exists
+            if (window[`init${pageName.charAt(0).toUpperCase() + pageName.slice(1)}`]) {
+                await window[`init${pageName.charAt(0).toUpperCase() + pageName.slice(1)}`]();
+            }
+        } catch (error) {
+            console.error('Page load error:', error);
+            contentDiv.innerHTML = `
+                <div class="card p-5 text-center">
+                    <i class="bi bi-exclamation-triangle fs-1 text-warning"></i>
+                    <h5 class="mt-3">Failed to load page</h5>
+                    <p class="text-muted">${error.message}</p>
+                    <button class="btn btn-primary mt-3" onclick="location.reload()">Retry</button>
+                </div>
+            `;
+        }
+    }
+
+    // ==================== INITIALIZATION ====================
+    async function initApp() {
+        showLoading(true);
+        
+        try {
+            // Load user profile
+            await loadUserProfile();
+            
+            // Setup navigation
+            document.querySelectorAll('.sidebar-link').forEach(link => {
+                link.onclick = (e) => {
+                    e.preventDefault();
+                    const page = link.dataset.page;
+                    if (page) loadPage(page);
+                };
+            });
+            
+            document.getElementById('logoLink').onclick = (e) => {
+                e.preventDefault();
+                loadPage('dashboard');
+            };
+            
+            document.getElementById('logoutBtn').onclick = () => logout();
+            
+            // Load default page
+            await loadPage('dashboard');
+            showLoading(false);
+        } catch (err) {
+            console.error('Init error:', err);
+            showLoading(false);
+            showAuthModal();
+        }
+    }
+
+    // Start the app
+    if (authToken) {
+        initApp();
+    } else {
+        showLoading(false);
+        showAuthModal();
+    }
+</script>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

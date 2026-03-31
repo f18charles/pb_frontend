@@ -1,0 +1,117 @@
+<div class="card p-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="bi bi-pie-chart"></i> Budgets</h4>
+        <button class="btn btn-sm btn-success" id="addBudgetBtn"><i class="bi bi-plus-lg"></i> Create Budget</button>
+    </div>
+    
+    <div id="budgetsList" class="row">
+        <div class="col-12 text-center py-5">
+            <div class="spinner-border text-success"></div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="budgetModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success bg-opacity-10">
+                <h5 class="modal-title">Create Budget</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <select id="budgetCategory" class="form-select mb-2" required></select>
+                <input type="number" step="0.01" id="budgetAmount" class="form-control mb-2" placeholder="Budget Amount (KES)">
+                <select id="budgetPeriod" class="form-select">
+                    <option value="monthly">Monthly</option>
+                    <option value="weekly">Weekly</option>
+                </select>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary" id="confirmBudgetBtn">Create</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let budgetCategories = [];
+
+window.initBudgets = async function() {
+    await loadBudgets();
+    await loadBudgetCategories();
+    
+    document.getElementById('addBudgetBtn').onclick = () => {
+        const modal = new bootstrap.Modal(document.getElementById('budgetModal'));
+        modal.show();
+    };
+    
+    document.getElementById('confirmBudgetBtn').onclick = createBudget;
+};
+
+async function loadBudgets() {
+    const response = await apiFetch('/budgets');
+    const budgets = response.data || [];
+    const container = document.getElementById('budgetsList');
+    
+    if (!budgets.length) {
+        container.innerHTML = '<div class="col-12 text-center py-5 text-muted">No budgets yet. Create your first budget!</div>';
+        return;
+    }
+    
+    container.innerHTML = budgets.map(b => `
+        <div class="col-md-6 mb-3">
+            <div class="card p-3">
+                <h6 class="fw-bold">${b.category?.name || 'Category'}</h6>
+                <div class="progress mb-2" style="height: 10px;">
+                    <div class="progress-bar ${(b.spent/b.amount*100) > 90 ? 'bg-danger' : 'bg-success'}" 
+                         style="width: ${Math.min((b.spent/b.amount*100), 100)}%"></div>
+                </div>
+                <div class="d-flex justify-content-between small">
+                    <span>Spent: ${formatCurrency(b.spent)}</span>
+                    <span>Budget: ${formatCurrency(b.amount)}</span>
+                </div>
+                <span class="badge bg-secondary mt-2 w-auto">${b.period}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+async function loadBudgetCategories() {
+    const response = await apiFetch('/categories');
+    budgetCategories = (response.data || []).filter(c => c.type === 'expense');
+    const select = document.getElementById('budgetCategory');
+    select.innerHTML = '<option value="">Select category</option>' + 
+        budgetCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+}
+
+async function createBudget() {
+    const categoryId = document.getElementById('budgetCategory').value;
+    const amount = parseFloat(document.getElementById('budgetAmount').value);
+    const period = document.getElementById('budgetPeriod').value;
+    
+    if (!categoryId || isNaN(amount) || amount <= 0) {
+        alert('Please select a category and enter a valid amount');
+        return;
+    }
+    
+    try {
+        await apiFetch('/budgets', {
+            method: 'POST',
+            body: JSON.stringify({
+                category_id: categoryId,
+                amount: amount,
+                period: period,
+                start_date: new Date().toISOString(),
+                end_date: new Date(Date.now() + 30*24*60*60*1000).toISOString()
+            })
+        });
+        
+        bootstrap.Modal.getInstance(document.getElementById('budgetModal')).hide();
+        await loadBudgets();
+        document.getElementById('budgetAmount').value = '';
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+</script>

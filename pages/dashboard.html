@@ -1,0 +1,119 @@
+<div class="row">
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card stat-card p-3">
+            <h6 class="text-secondary mb-2"><i class="bi bi-calculator"></i> Net Worth</h6>
+            <h2 class="text-success mb-0" id="netWorth">--</h2>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card stat-card p-3">
+            <h6 class="text-secondary mb-2"><i class="bi bi-fire"></i> Monthly Burn</h6>
+            <h2 class="text-primary mb-0" id="monthlyBurn">--</h2>
+        </div>
+    </div>
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card stat-card p-3">
+            <h6 class="text-secondary mb-2"><i class="bi bi-graph-up"></i> Savings Rate</h6>
+            <h2 class="text-info mb-0" id="savingsRate">--</h2>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-lg-6 mb-4">
+        <div class="card p-4 h-100">
+            <h5 class="mb-3"><i class="bi bi-lightbulb text-warning"></i> Quick Insights</h5>
+            <ul class="list-unstyled mb-0" id="quickInsights">
+                <li class="text-muted">Loading...</li>
+            </ul>
+        </div>
+    </div>
+    <div class="col-lg-6 mb-4">
+        <div class="card p-4 h-100">
+            <h5 class="mb-3"><i class="bi bi-pie-chart"></i> Budget Health</h5>
+            <div id="budgetHealth">
+                <p class="text-muted">Loading...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card p-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Transactions</h5>
+        <button class="btn btn-sm btn-outline-primary" id="viewAllTx">View All</button>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-hover">
+            <thead>
+                <tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th></tr>
+            </thead>
+            <tbody id="recentTransactions">
+                <tr><td colspan="4" class="text-center text-muted">Loading...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+window.initDashboard = async function() {
+    try {
+        const overview = await apiFetch('/insights/overview');
+        const monthly = await apiFetch('/insights/summary/monthly');
+        
+        document.getElementById('netWorth').innerHTML = formatCurrency(overview.data.net_worth);
+        document.getElementById('monthlyBurn').innerHTML = formatCurrency(overview.data.monthly_burn);
+        document.getElementById('savingsRate').innerHTML = `${(monthly.data?.savings_rate || 0).toFixed(1)}%`;
+        
+        const insightsList = document.getElementById('quickInsights');
+        const insights = overview.data.quick_insights || [];
+        if (insights.length) {
+            insightsList.innerHTML = insights.map(i => `<li class="mb-2"><i class="bi bi-chat-right-quote text-success me-2"></i>${i}</li>`).join('');
+        } else {
+            insightsList.innerHTML = '<li class="text-muted">Add transactions to see insights</li>';
+        }
+        
+        const budgetHealth = document.getElementById('budgetHealth');
+        const budgets = overview.data.budget_health || [];
+        if (budgets.length) {
+            budgetHealth.innerHTML = budgets.map(b => `
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between small">
+                        <span>${b.category_name}</span>
+                        <span>${formatCurrency(b.spent)} / ${formatCurrency(b.budget)}</span>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar ${b.percentage > 90 ? 'bg-danger' : 'bg-success'}" 
+                             style="width: ${Math.min(b.percentage, 100)}%"></div>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            budgetHealth.innerHTML = '<p class="text-muted">No budgets yet. Create one!</p>';
+        }
+        
+        const txs = overview.data.recent_transactions || [];
+        const txBody = document.getElementById('recentTransactions');
+        if (txs.length) {
+            txBody.innerHTML = txs.slice(0, 5).map(tx => `
+                <tr>
+                    <td>${formatDate(tx.transaction_date)}</td>
+                    <td>${tx.description || '—'}</td>
+                    <td>${tx.category?.name || 'Uncategorized'}</td>
+                    <td class="${tx.type === 'income' ? 'amount-positive' : 'amount-negative'}">
+                        ${tx.type === 'income' ? '+' : '-'} ${formatCurrency(Math.abs(tx.amount))}
+                    </td>
+                </tr>
+            `).join('');
+        } else {
+            txBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No transactions yet</td></tr>';
+        }
+        
+        document.getElementById('viewAllTx').onclick = () => loadPage('transactions');
+        
+    } catch (err) {
+        console.error('Dashboard error:', err);
+        document.getElementById('quickInsights').innerHTML = `<li class="text-danger">Error: ${err.message}</li>`;
+    }
+};
+</script>

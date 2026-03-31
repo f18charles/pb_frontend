@@ -1,0 +1,71 @@
+<div class="card p-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h4><i class="bi bi-trophy"></i> Savings Goals</h4>
+        <button class="btn btn-sm btn-success" id="addGoalBtn"><i class="bi bi-plus-lg"></i> Add Goal</button>
+    </div>
+    
+    <div id="goalsList" class="row">
+        <div class="col-12 text-center py-5">
+            <div class="spinner-border text-success"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+window.initGoals = async function() {
+    await loadGoals();
+    document.getElementById('addGoalBtn').onclick = addGoal;
+};
+
+async function loadGoals() {
+    const response = await apiFetch('/goals');
+    const goals = response.data || [];
+    const container = document.getElementById('goalsList');
+    
+    if (!goals.length) {
+        container.innerHTML = '<div class="col-12 text-center py-5 text-muted">No goals yet. Set a savings goal!</div>';
+        return;
+    }
+    
+    container.innerHTML = goals.map(g => {
+        const percent = (g.current_amount / g.target_amount * 100).toFixed(1);
+        return `
+            <div class="col-md-6 mb-3">
+                <div class="card p-3">
+                    <h5 class="fw-bold">🎯 ${g.name}</h5>
+                    <div class="progress mb-2" style="height: 12px;">
+                        <div class="progress-bar bg-info" style="width: ${Math.min(percent, 100)}%"></div>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span>Saved: ${formatCurrency(g.current_amount)}</span>
+                        <span>Target: ${formatCurrency(g.target_amount)}</span>
+                    </div>
+                    <small class="text-muted mt-2">${percent}% complete</small>
+                    ${g.deadline ? `<small class="text-muted">Deadline: ${formatDate(g.deadline)}</small>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function addGoal() {
+    const name = prompt('Goal name:');
+    if (!name) return;
+    const target = parseFloat(prompt('Target amount (KES):'));
+    if (isNaN(target)) return;
+    
+    try {
+        await apiFetch('/goals', {
+            method: 'POST',
+            body: JSON.stringify({
+                name: name,
+                target_amount: target,
+                current_amount: 0
+            })
+        });
+        await loadGoals();
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+</script>
