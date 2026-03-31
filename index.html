@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Piggy Bank</title>
-    <!-- Bootstrap 5 -->
+    <title>Piggy Bank - Smart Personal Finance</title>
+    <!-- Bootstrap CSS + Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
     <!-- Chart.js -->
@@ -22,7 +22,6 @@
             font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
         }
         
-        /* Loading Overlay */
         .loading-overlay {
             position: fixed;
             top: 0;
@@ -46,7 +45,6 @@
             margin-top: 20px;
         }
         
-        /* Navbar */
         .navbar {
             background: linear-gradient(95deg, var(--primary-green-dark), var(--primary-green));
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
@@ -57,7 +55,6 @@
             font-size: 1.4rem;
         }
         
-        /* Sidebar */
         .sidebar-link {
             display: flex;
             align-items: center;
@@ -87,7 +84,6 @@
             font-size: 1.2rem;
         }
         
-        /* Cards */
         .card {
             border: none;
             border-radius: 24px;
@@ -131,6 +127,14 @@
                 font-size: 0.9rem;
             }
         }
+        
+        .page-content {
+            display: none;
+        }
+        
+        .page-content.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
@@ -141,8 +145,8 @@
     <h4 class="text-success">🐷 Piggy Bank</h4>
     <p class="text-muted mt-2">Loading your finances...</p>
     <div class="render-warning">
-        <i class="bi bi-cloud-upload"></i> <strong>Render Free Tier</strong><br>
-        Backend may take 20-40 seconds to wake up. Please wait!
+        <i class="bi bi-cloud-upload"></i> <strong>Render Free Tier Notice</strong><br>
+        Backend may take 20-40 seconds to wake up. Please wait patiently!
     </div>
 </div>
 
@@ -200,12 +204,12 @@
 
             <!-- Dynamic Content Area -->
             <div class="col-md-9 col-lg-10">
-                <div id="pageContent">
-                    <div class="text-center py-5">
-                        <div class="spinner-border text-success"></div>
-                        <p class="mt-2 text-muted">Loading page...</p>
-                    </div>
-                </div>
+                <div id="dashboardPage" class="page-content active"></div>
+                <div id="transactionsPage" class="page-content"></div>
+                <div id="budgetsPage" class="page-content"></div>
+                <div id="goalsPage" class="page-content"></div>
+                <div id="insightsPage" class="page-content"></div>
+                <div id="categoriesPage" class="page-content"></div>
             </div>
         </div>
     </div>
@@ -215,13 +219,16 @@
     </div>
 </div>
 
-<!-- Main JavaScript -->
+<!-- Bootstrap JS (load after content) -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
 <script>
     // ==================== CONFIGURATION ====================
     const API_BASE = 'https://piggy-bank-lod0.onrender.com/api/v1';
     let authToken = localStorage.getItem('piggy_token');
     let currentUser = null;
     let chartInstance = null;
+    let currentPage = 'dashboard';
 
     // ==================== UTILITIES ====================
     function showLoading(show) {
@@ -229,10 +236,10 @@
         const app = document.getElementById('app');
         if (show) {
             overlay.style.display = 'flex';
-            app.style.display = 'none';
+            if (app) app.style.display = 'none';
         } else {
             overlay.style.display = 'none';
-            app.style.display = 'block';
+            if (app) app.style.display = 'block';
         }
     }
 
@@ -242,7 +249,42 @@
 
     function formatDate(dateString) {
         if (!dateString) return '—';
-        return new Date(dateString).toLocaleDateString();
+        try {
+            return new Date(dateString).toLocaleDateString('en-KE');
+        } catch(e) {
+            return '—';
+        }
+    }
+
+    function showPage(pageName) {
+        // Hide all pages
+        document.querySelectorAll('.page-content').forEach(page => {
+            page.classList.remove('active');
+        });
+        
+        // Show selected page
+        const pageElement = document.getElementById(`${pageName}Page`);
+        if (pageElement) {
+            pageElement.classList.add('active');
+        }
+        
+        // Update active sidebar
+        document.querySelectorAll('.sidebar-link').forEach(link => {
+            link.classList.remove('active');
+            if (link.dataset.page === pageName) {
+                link.classList.add('active');
+            }
+        });
+        
+        currentPage = pageName;
+        
+        // Load page data
+        if (pageName === 'dashboard') loadDashboard();
+        else if (pageName === 'transactions') loadTransactions();
+        else if (pageName === 'budgets') loadBudgets();
+        else if (pageName === 'goals') loadGoals();
+        else if (pageName === 'insights') loadInsights();
+        else if (pageName === 'categories') loadCategories();
     }
 
     // ==================== API CALLS ====================
@@ -322,24 +364,28 @@
 
     // ==================== AUTH MODAL ====================
     function showAuthModal() {
-        // Hide main app if visible
-        document.getElementById('app').style.display = 'none';
-        document.getElementById('loadingOverlay').style.display = 'flex';
+        // Hide app
+        const app = document.getElementById('app');
+        if (app) app.style.display = 'none';
+        
+        // Remove any existing modals
+        const existingModal = document.getElementById('authModal');
+        if (existingModal) existingModal.remove();
         
         const modalHtml = `
-            <div class="modal fade" id="authModal" tabindex="-1" data-bs-backdrop="static" style="display: block;">
+            <div class="modal fade" id="authModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
                 <div class="modal-dialog modal-dialog-centered">
                     <div class="modal-content rounded-4">
                         <div class="modal-header bg-success bg-opacity-10 border-0">
-                            <h5 class="modal-title"><i class="bi bi-piggy-bank-fill"></i> Piggy Bank</h5>
+                            <h5 class="modal-title"><i class="bi bi-piggy-bank-fill me-2"></i>Piggy Bank</h5>
                         </div>
                         <div class="modal-body">
                             <ul class="nav nav-tabs mb-3" id="authTab" role="tablist">
                                 <li class="nav-item">
-                                    <button class="nav-link active" id="loginTabBtn" data-bs-toggle="tab" data-bs-target="#loginPanel">Login</button>
+                                    <button class="nav-link active" id="loginTabBtn" data-bs-toggle="tab" data-bs-target="#loginPanel" type="button">Login</button>
                                 </li>
                                 <li class="nav-item">
-                                    <button class="nav-link" id="registerTabBtn" data-bs-toggle="tab" data-bs-target="#registerPanel">Register</button>
+                                    <button class="nav-link" id="registerTabBtn" data-bs-toggle="tab" data-bs-target="#registerPanel" type="button">Register</button>
                                 </li>
                             </ul>
                             <div class="tab-content">
@@ -359,12 +405,11 @@
                     </div>
                 </div>
             </div>
-            <div class="modal-backdrop fade show"></div>
         `;
         
         document.body.insertAdjacentHTML('beforeend', modalHtml);
         
-        // Load Bootstrap modal properly
+        // Show modal using Bootstrap
         const modalElement = document.getElementById('authModal');
         const modal = new bootstrap.Modal(modalElement, { backdrop: 'static', keyboard: false });
         modal.show();
@@ -373,14 +418,16 @@
         document.getElementById('doLoginBtn').onclick = async () => {
             const email = document.getElementById('loginEmail').value;
             const password = document.getElementById('loginPassword').value;
-            if (!email || !password) return alert('Please enter email and password');
+            if (!email || !password) {
+                alert('Please enter email and password');
+                return;
+            }
             
+            showLoading(true);
             try {
-                showLoading(true);
                 await login(email, password);
                 modal.hide();
-                document.getElementById('authModal')?.remove();
-                document.querySelector('.modal-backdrop')?.remove();
+                document.getElementById('authModal').remove();
                 await initApp();
             } catch (err) {
                 alert('Login failed: ' + err.message);
@@ -394,15 +441,15 @@
             const email = document.getElementById('regEmail').value;
             const password = document.getElementById('regPassword').value;
             if (!name || !email || password.length < 8) {
-                return alert('Please fill all fields (password min 8 chars)');
+                alert('Please fill all fields (password min 8 chars)');
+                return;
             }
             
+            showLoading(true);
             try {
-                showLoading(true);
                 await register(name, email, password);
                 modal.hide();
-                document.getElementById('authModal')?.remove();
-                document.querySelector('.modal-backdrop')?.remove();
+                document.getElementById('authModal').remove();
                 await initApp();
             } catch (err) {
                 alert('Registration failed: ' + err.message);
@@ -411,69 +458,449 @@
         };
     }
 
-    // ==================== PAGE LOADING ====================
-    async function loadPage(pageName) {
-        const contentDiv = document.getElementById('pageContent');
-        if (!contentDiv) return;
-        
-        // Update active sidebar
-        document.querySelectorAll('.sidebar-link').forEach(link => {
-            link.classList.remove('active');
-            if (link.dataset.page === pageName) {
-                link.classList.add('active');
-            }
-        });
+    // ==================== DASHBOARD ====================
+    async function loadDashboard() {
+        const container = document.getElementById('dashboardPage');
+        container.innerHTML = `
+            <div class="row">
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card stat-card p-3">
+                        <h6 class="text-secondary mb-2"><i class="bi bi-calculator"></i> Net Worth</h6>
+                        <h2 class="text-success mb-0" id="netWorth">--</h2>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card stat-card p-3">
+                        <h6 class="text-secondary mb-2"><i class="bi bi-fire"></i> Monthly Burn</h6>
+                        <h2 class="text-primary mb-0" id="monthlyBurn">--</h2>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-4 mb-4">
+                    <div class="card stat-card p-3">
+                        <h6 class="text-secondary mb-2"><i class="bi bi-graph-up"></i> Savings Rate</h6>
+                        <h2 class="text-info mb-0" id="savingsRate">--</h2>
+                    </div>
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-lg-6 mb-4">
+                    <div class="card p-4 h-100">
+                        <h5 class="mb-3"><i class="bi bi-lightbulb text-warning"></i> Quick Insights</h5>
+                        <ul class="list-unstyled mb-0" id="quickInsights"><li class="text-muted">Loading...</li></ul>
+                    </div>
+                </div>
+                <div class="col-lg-6 mb-4">
+                    <div class="card p-4 h-100">
+                        <h5 class="mb-3"><i class="bi bi-pie-chart"></i> Budget Health</h5>
+                        <div id="budgetHealth"><p class="text-muted">Loading...</p></div>
+                    </div>
+                </div>
+            </div>
+            <div class="card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="mb-0"><i class="bi bi-clock-history"></i> Recent Transactions</h5>
+                    <button class="btn btn-sm btn-outline-primary" id="viewAllTxBtn">View All</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Amount</th></tr></thead>
+                        <tbody id="recentTransactions"><tr><td colspan="4" class="text-center">Loading...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        `;
         
         try {
-            // Fetch the page HTML
-            const response = await fetch(`pages/${pageName}.html`);
-            if (!response.ok) throw new Error(`Failed to load ${pageName} page`);
-            let html = await response.text();
-            contentDiv.innerHTML = html;
+            const overview = await apiFetch('/insights/overview');
+            const monthly = await apiFetch('/insights/summary/monthly');
             
-            // Execute page-specific initialization if it exists
-            if (window[`init${pageName.charAt(0).toUpperCase() + pageName.slice(1)}`]) {
-                await window[`init${pageName.charAt(0).toUpperCase() + pageName.slice(1)}`]();
-            }
-        } catch (error) {
-            console.error('Page load error:', error);
-            contentDiv.innerHTML = `
-                <div class="card p-5 text-center">
-                    <i class="bi bi-exclamation-triangle fs-1 text-warning"></i>
-                    <h5 class="mt-3">Failed to load page</h5>
-                    <p class="text-muted">${error.message}</p>
-                    <button class="btn btn-primary mt-3" onclick="location.reload()">Retry</button>
+            document.getElementById('netWorth').innerHTML = formatCurrency(overview.data.net_worth);
+            document.getElementById('monthlyBurn').innerHTML = formatCurrency(overview.data.monthly_burn);
+            document.getElementById('savingsRate').innerHTML = `${(monthly.data?.savings_rate || 0).toFixed(1)}%`;
+            
+            const insights = overview.data.quick_insights || [];
+            const insightsHtml = insights.length ? insights.map(i => `<li class="mb-2"><i class="bi bi-chat-right-quote text-success me-2"></i>${i}</li>`).join('') : '<li class="text-muted">Add transactions to see insights</li>';
+            document.getElementById('quickInsights').innerHTML = insightsHtml;
+            
+            const budgets = overview.data.budget_health || [];
+            const budgetsHtml = budgets.length ? budgets.map(b => `
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between small"><span>${b.category_name}</span><span>${formatCurrency(b.spent)} / ${formatCurrency(b.budget)}</span></div>
+                    <div class="progress" style="height: 8px;"><div class="progress-bar ${b.percentage > 90 ? 'bg-danger' : 'bg-success'}" style="width: ${Math.min(b.percentage, 100)}%"></div></div>
                 </div>
+            `).join('') : '<p class="text-muted">No budgets yet</p>';
+            document.getElementById('budgetHealth').innerHTML = budgetsHtml;
+            
+            const txs = overview.data.recent_transactions || [];
+            const txsHtml = txs.length ? txs.slice(0, 5).map(tx => `
+                <tr><td>${formatDate(tx.transaction_date)}</td><td>${tx.description || '—'}</td><td>${tx.category?.name || 'Uncategorized'}</td>
+                <td class="${tx.type === 'income' ? 'amount-positive' : 'amount-negative'}">${tx.type === 'income' ? '+' : '-'} ${formatCurrency(Math.abs(tx.amount))}</td></tr>
+            `).join('') : '<tr><td colspan="4" class="text-center text-muted">No transactions yet</td></tr>';
+            document.getElementById('recentTransactions').innerHTML = txsHtml;
+            
+            document.getElementById('viewAllTxBtn').onclick = () => showPage('transactions');
+        } catch (err) {
+            console.error('Dashboard error:', err);
+            document.getElementById('quickInsights').innerHTML = `<li class="text-danger">Error: ${err.message}</li>`;
+        }
+    }
+
+    // ==================== TRANSACTIONS ====================
+    async function loadTransactions() {
+        const container = document.getElementById('transactionsPage');
+        container.innerHTML = `
+            <div class="card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+                    <h4 class="mb-0"><i class="bi bi-receipt"></i> Transactions</h4>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary me-2" id="exportCsvBtn"><i class="bi bi-filetype-csv"></i> CSV</button>
+                        <button class="btn btn-sm btn-outline-secondary me-2" id="exportPdfBtn"><i class="bi bi-file-pdf"></i> PDF</button>
+                        <button class="btn btn-sm btn-success" id="addTxBtn"><i class="bi bi-plus-lg"></i> Add Transaction</button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead><tr><th>Date</th><th>Description</th><th>Category</th><th>Account</th><th>Amount</th><th>Type</th></tr></thead>
+                        <tbody id="transactionsList"><tr><td colspan="6" class="text-center"><div class="spinner-border spinner-border-sm"></div> Loading...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal fade" id="txModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+                <div class="modal-header bg-success bg-opacity-10"><h5 class="modal-title">Add Transaction</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <input type="text" id="txDesc" class="form-control mb-2" placeholder="Description *">
+                    <input type="number" step="0.01" id="txAmount" class="form-control mb-2" placeholder="Amount *">
+                    <select id="txType" class="form-select mb-2"><option value="expense">Expense</option><option value="income">Income</option></select>
+                    <select id="txCategory" class="form-select mb-2"></select>
+                    <select id="txAccount" class="form-select mb-2"></select>
+                    <input type="text" id="txPayment" class="form-control mb-2" placeholder="Payment Method" value="cash">
+                </div>
+                <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary" id="saveTxBtn">Save</button></div>
+            </div></div></div>
+        `;
+        
+        await loadTransactionsList();
+        await loadTransactionFormData();
+        
+        document.getElementById('addTxBtn').onclick = () => new bootstrap.Modal(document.getElementById('txModal')).show();
+        document.getElementById('saveTxBtn').onclick = saveTransaction;
+        document.getElementById('exportCsvBtn').onclick = () => exportTransactions('csv');
+        document.getElementById('exportPdfBtn').onclick = () => exportTransactions('pdf');
+    }
+    
+    async function loadTransactionsList() {
+        const response = await apiFetch('/transactions');
+        const txs = response.data || [];
+        const tbody = document.getElementById('transactionsList');
+        if (!txs.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No transactions yet</td></tr>';
+            return;
+        }
+        tbody.innerHTML = txs.map(tx => `
+            <tr><td>${formatDate(tx.transaction_date)}</td><td>${tx.description || '—'}</td><td>${tx.category?.name || 'Uncategorized'}</td>
+            <td>${tx.account?.name || '—'}</td><td class="${tx.type === 'income' ? 'amount-positive' : 'amount-negative'}">${tx.type === 'income' ? '+' : '-'} ${formatCurrency(Math.abs(tx.amount))}</td>
+            <td><span class="badge ${tx.type === 'income' ? 'bg-success' : 'bg-secondary'}">${tx.type}</span></td></tr>
+        `).join('');
+    }
+    
+    async function loadTransactionFormData() {
+        const cats = await apiFetch('/categories');
+        const accs = await apiFetch('/accounts');
+        const catSelect = document.getElementById('txCategory');
+        const accSelect = document.getElementById('txAccount');
+        if (catSelect) catSelect.innerHTML = '<option value="">Select category</option>' + (cats.data || []).map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        if (accSelect) accSelect.innerHTML = (accs.data || []).map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+    }
+    
+    async function saveTransaction() {
+        const data = {
+            description: document.getElementById('txDesc').value,
+            amount: parseFloat(document.getElementById('txAmount').value),
+            type: document.getElementById('txType').value,
+            category_id: document.getElementById('txCategory').value || null,
+            account_id: document.getElementById('txAccount').value,
+            payment_method: document.getElementById('txPayment').value,
+            reference_id: `web_${Date.now()}`,
+            status: 'completed'
+        };
+        if (!data.description || isNaN(data.amount) || !data.account_id) {
+            alert('Please fill all required fields');
+            return;
+        }
+        try {
+            await apiFetch('/transactions', { method: 'POST', body: JSON.stringify(data) });
+            bootstrap.Modal.getInstance(document.getElementById('txModal')).hide();
+            await loadTransactionsList();
+            document.getElementById('txDesc').value = '';
+            document.getElementById('txAmount').value = '';
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+    
+    async function exportTransactions(format) {
+        try {
+            const response = await fetch(`${API_BASE}/transactions/export?format=${format}`, {
+                headers: { 'Authorization': `Bearer ${authToken}` }
+            });
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `transactions.${format}`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            alert('Export failed: ' + err.message);
+        }
+    }
+
+    // ==================== BUDGETS ====================
+    async function loadBudgets() {
+        const container = document.getElementById('budgetsPage');
+        container.innerHTML = `
+            <div class="card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4><i class="bi bi-pie-chart"></i> Budgets</h4>
+                    <button class="btn btn-sm btn-success" id="addBudgetBtn"><i class="bi bi-plus-lg"></i> Create Budget</button>
+                </div>
+                <div id="budgetsList" class="row"><div class="col-12 text-center py-5"><div class="spinner-border text-success"></div></div></div>
+            </div>
+            <div class="modal fade" id="budgetModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content">
+                <div class="modal-header bg-success bg-opacity-10"><h5 class="modal-title">Create Budget</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+                <div class="modal-body">
+                    <select id="budgetCategory" class="form-select mb-2"></select>
+                    <input type="number" step="0.01" id="budgetAmount" class="form-control mb-2" placeholder="Budget Amount (KES)">
+                    <select id="budgetPeriod" class="form-select"><option value="monthly">Monthly</option><option value="weekly">Weekly</option></select>
+                </div>
+                <div class="modal-footer"><button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button class="btn btn-primary" id="confirmBudgetBtn">Create</button></div>
+            </div></div></div>
+        `;
+        
+        await loadBudgetsList();
+        await loadBudgetCategories();
+        
+        document.getElementById('addBudgetBtn').onclick = () => new bootstrap.Modal(document.getElementById('budgetModal')).show();
+        document.getElementById('confirmBudgetBtn').onclick = createBudget;
+    }
+    
+    async function loadBudgetsList() {
+        const response = await apiFetch('/budgets');
+        const budgets = response.data || [];
+        const container = document.getElementById('budgetsList');
+        if (!budgets.length) {
+            container.innerHTML = '<div class="col-12 text-center py-5 text-muted">No budgets yet. Create your first budget!</div>';
+            return;
+        }
+        container.innerHTML = budgets.map(b => `
+            <div class="col-md-6 mb-3"><div class="card p-3">
+                <h6 class="fw-bold">${b.category?.name || 'Category'}</h6>
+                <div class="progress mb-2" style="height: 10px;"><div class="progress-bar ${(b.spent/b.amount*100) > 90 ? 'bg-danger' : 'bg-success'}" style="width: ${Math.min((b.spent/b.amount*100), 100)}%"></div></div>
+                <div class="d-flex justify-content-between small"><span>Spent: ${formatCurrency(b.spent)}</span><span>Budget: ${formatCurrency(b.amount)}</span></div>
+                <span class="badge bg-secondary mt-2 w-auto">${b.period}</span>
+            </div></div>
+        `).join('');
+    }
+    
+    async function loadBudgetCategories() {
+        const response = await apiFetch('/categories');
+        const categories = (response.data || []).filter(c => c.type === 'expense');
+        const select = document.getElementById('budgetCategory');
+        if (select) select.innerHTML = '<option value="">Select category</option>' + categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    }
+    
+    async function createBudget() {
+        const categoryId = document.getElementById('budgetCategory').value;
+        const amount = parseFloat(document.getElementById('budgetAmount').value);
+        const period = document.getElementById('budgetPeriod').value;
+        if (!categoryId || isNaN(amount) || amount <= 0) {
+            alert('Please select a category and enter a valid amount');
+            return;
+        }
+        try {
+            await apiFetch('/budgets', {
+                method: 'POST',
+                body: JSON.stringify({ category_id: categoryId, amount, period, start_date: new Date().toISOString(), end_date: new Date(Date.now() + 30*24*60*60*1000).toISOString() })
+            });
+            bootstrap.Modal.getInstance(document.getElementById('budgetModal')).hide();
+            await loadBudgetsList();
+            document.getElementById('budgetAmount').value = '';
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+
+    // ==================== GOALS ====================
+    async function loadGoals() {
+        const container = document.getElementById('goalsPage');
+        container.innerHTML = `
+            <div class="card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4><i class="bi bi-trophy"></i> Savings Goals</h4>
+                    <button class="btn btn-sm btn-success" id="addGoalBtn"><i class="bi bi-plus-lg"></i> Add Goal</button>
+                </div>
+                <div id="goalsList" class="row"><div class="col-12 text-center py-5"><div class="spinner-border text-success"></div></div></div>
+            </div>
+        `;
+        await loadGoalsList();
+        document.getElementById('addGoalBtn').onclick = addGoal;
+    }
+    
+    async function loadGoalsList() {
+        const response = await apiFetch('/goals');
+        const goals = response.data || [];
+        const container = document.getElementById('goalsList');
+        if (!goals.length) {
+            container.innerHTML = '<div class="col-12 text-center py-5 text-muted">No goals yet. Set a savings goal!</div>';
+            return;
+        }
+        container.innerHTML = goals.map(g => {
+            const percent = (g.current_amount / g.target_amount * 100).toFixed(1);
+            return `<div class="col-md-6 mb-3"><div class="card p-3">
+                <h5 class="fw-bold">🎯 ${g.name}</h5>
+                <div class="progress mb-2" style="height: 12px;"><div class="progress-bar bg-info" style="width: ${Math.min(percent, 100)}%"></div></div>
+                <div class="d-flex justify-content-between"><span>Saved: ${formatCurrency(g.current_amount)}</span><span>Target: ${formatCurrency(g.target_amount)}</span></div>
+                <small class="text-muted mt-2">${percent}% complete</small>
+                ${g.deadline ? `<small class="text-muted">Deadline: ${formatDate(g.deadline)}</small>` : ''}
+            </div></div>`;
+        }).join('');
+    }
+    
+    async function addGoal() {
+        const name = prompt('Goal name:');
+        if (!name) return;
+        const target = parseFloat(prompt('Target amount (KES):'));
+        if (isNaN(target)) return;
+        try {
+            await apiFetch('/goals', { method: 'POST', body: JSON.stringify({ name, target_amount: target, current_amount: 0 }) });
+            await loadGoalsList();
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    }
+
+    // ==================== INSIGHTS ====================
+    async function loadInsights() {
+        const container = document.getElementById('insightsPage');
+        container.innerHTML = `
+            <div class="card p-4">
+                <h4><i class="bi bi-graph-up"></i> Spending Insights</h4>
+                <p class="text-muted">Based on your last 90 days of transactions</p>
+                <div class="row">
+                    <div class="col-md-6 mb-4"><canvas id="categoryChart" style="max-height: 300px;"></canvas></div>
+                    <div class="col-md-6"><h6>📊 Spending Patterns</h6><div id="patterns"></div><h6 class="mt-3">⚠️ Unusual Transactions</h6><div id="anomalies"></div></div>
+                </div>
+                <h6 class="mt-3">💡 Recommendations</h6><div id="recommendations"></div>
+            </div>
+        `;
+        
+        try {
+            const response = await apiFetch('/insights/spending?days=90');
+            const data = response.data;
+            const topCats = data.top_categories || [];
+            
+            if (topCats.length) {
+                const ctx = document.getElementById('categoryChart').getContext('2d');
+                if (chartInstance) chartInstance.destroy();
+                chartInstance = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: { labels: topCats.map(c => c.category_name), datasets: [{ data: topCats.map(c => c.total_spent), backgroundColor: ['#2c6e2f', '#7bc5d9', '#e9b35f', '#6c9e6f', '#c96b3a'] }] }
+                });
+            } else {
+                document.getElementById('categoryChart').parentElement.innerHTML = '<p class="text-muted">No spending data available</p>';
+            }
+            
+            const patterns = data.spending_patterns || {};
+            document.getElementById('patterns').innerHTML = `
+                <p><strong>Most active day:</strong> ${patterns.most_active_day || 'N/A'}</p>
+                <p><strong>Peak spending hour:</strong> ${patterns.peak_hour || 'N/A'}:00</p>
+                <p><strong>Weekday avg:</strong> ${formatCurrency(patterns.avg_weekday_spend || 0)}</p>
+                <p><strong>Weekend avg:</strong> ${formatCurrency(patterns.avg_weekend_spend || 0)}</p>
             `;
+            
+            const anomalies = data.anomalies || [];
+            document.getElementById('anomalies').innerHTML = anomalies.length ? anomalies.map(a => `<div class="small mb-2">⚠️ ${formatDate(a.date)}: ${a.description} - ${formatCurrency(a.amount)} (expected ~${formatCurrency(a.expected_amount)})</div>`).join('') : '<p class="text-muted">No unusual spending detected</p>';
+            
+            const recs = data.recommendations || [];
+            document.getElementById('recommendations').innerHTML = recs.length ? `<ul class="list-unstyled">${recs.map(r => `<li class="mb-2"><i class="bi bi-lightbulb text-warning me-2"></i>${r}</li>`).join('')}</ul>` : '<p class="text-muted">Add more transactions for personalized recommendations</p>';
+        } catch (err) {
+            console.error('Insights error:', err);
+            document.getElementById('patterns').innerHTML = `<p class="text-danger">Error loading insights: ${err.message}</p>`;
+        }
+    }
+
+    // ==================== CATEGORIES ====================
+    async function loadCategories() {
+        const container = document.getElementById('categoriesPage');
+        container.innerHTML = `
+            <div class="card p-4">
+                <div class="d-flex justify-content-between align-items-center mb-4">
+                    <h4><i class="bi bi-tags"></i> Categories</h4>
+                    <button class="btn btn-sm btn-success" id="addCategoryBtn"><i class="bi bi-plus-lg"></i> Add Category</button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead><tr><th>Name</th><th>Type</th><th>Color</th><th>Icon</th></thead>
+                        <tbody id="categoriesList"><tr><td colspan="4" class="text-center"><div class="spinner-border spinner-border-sm"></div> Loading...</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+        await loadCategoriesList();
+        document.getElementById('addCategoryBtn').onclick = addCategory;
+    }
+    
+    async function loadCategoriesList() {
+        const response = await apiFetch('/categories');
+        const categories = response.data || [];
+        const tbody = document.getElementById('categoriesList');
+        tbody.innerHTML = categories.map(c => `
+            <tr><td><i class="bi bi-${c.icon || 'tag'} me-2"></i> ${c.name}</td>
+            <td><span class="badge ${c.type === 'income' ? 'bg-success' : 'bg-secondary'}">${c.type}</span></td>
+            <td><span style="background:${c.color || '#ccc'}; width:24px;height:24px;display:inline-block;border-radius:50%;"></span> ${c.color || 'default'}</td>
+            <td>${c.icon || 'tag'}</td></tr>
+        `).join('');
+    }
+    
+    async function addCategory() {
+        const name = prompt('Category name:');
+        if (!name) return;
+        const type = prompt('Type (expense/income):', 'expense');
+        if (!['expense', 'income'].includes(type)) return alert('Type must be expense or income');
+        const color = prompt('Color (hex, e.g., #2c6e2f):', '#2c6e2f');
+        const icon = prompt('Icon name (bootstrap icon, e.g., cart):', 'tag');
+        try {
+            await apiFetch('/categories', { method: 'POST', body: JSON.stringify({ name, type, color, icon }) });
+            await loadCategoriesList();
+        } catch (err) {
+            alert('Error: ' + err.message);
         }
     }
 
     // ==================== INITIALIZATION ====================
     async function initApp() {
         showLoading(true);
-        
         try {
-            // Load user profile
             await loadUserProfile();
             
             // Setup navigation
             document.querySelectorAll('.sidebar-link').forEach(link => {
                 link.onclick = (e) => {
                     e.preventDefault();
-                    const page = link.dataset.page;
-                    if (page) loadPage(page);
+                    showPage(link.dataset.page);
                 };
             });
             
             document.getElementById('logoLink').onclick = (e) => {
                 e.preventDefault();
-                loadPage('dashboard');
+                showPage('dashboard');
             };
             
             document.getElementById('logoutBtn').onclick = () => logout();
             
-            // Load default page
-            await loadPage('dashboard');
+            // Load dashboard
+            showPage('dashboard');
             showLoading(false);
         } catch (err) {
             console.error('Init error:', err);
@@ -490,7 +917,5 @@
         showAuthModal();
     }
 </script>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
