@@ -542,7 +542,7 @@
         // Budget health (with better category name handling)
         const budgets = overview.data.budget_health || [];
         const budgetsHtml = budgets.length ? budgets.map(b => {
-            let categoryName = b.category_name || 'Unknown';
+            let categoryName = b.category.name || 'Unknown';
             const spent = b.spent || 0;
             const budgetAmount = b.budget || 0;
             const percentage = budgetAmount > 0 ? (spent / budgetAmount * 100) : 0;
@@ -728,12 +728,21 @@
 
     async function loadBudgetsList() {
         try {
-            const response = await apiFetch('/budgets');
-            const budgets = response.data || [];
+            // Fetch both budgets and categories in parallel
+            const [budgetsResponse, categoriesResponse] = await Promise.all([
+                apiFetch('/budgets'),
+                apiFetch('/categories')
+            ]);
+            
+            const budgets = budgetsResponse.data || [];
+            const categories = categoriesResponse.data || [];
             const container = document.getElementById('budgetsList');
             
-            // Debug: Log the actual response to see what's coming from the backend
+            // Create a lookup map for quick category access
+            const categoryMap = new Map(categories.map(c => [c.id, c]));
+            
             console.log('Budgets API Response:', budgets);
+            console.log('Category Map:', categoryMap);
             
             if (!budgets.length) {
                 container.innerHTML = '<div class="col-12 text-center py-5 text-muted">No budgets yet. Create your first budget!</div>';
@@ -741,20 +750,9 @@
             }
             
             container.innerHTML = budgets.map(b => {
-                // Try multiple ways to get the category name
-                let categoryName = 'Unknown Category';
-                
-                // Check different possible locations for category name
-                if (b.category && b.category.name) {
-                    categoryName = b.category.name;
-                } else if (b.Category && b.Category.name) {
-                    categoryName = b.Category.name;
-                } else if (b.category_name) {
-                    categoryName = b.category_name;
-                } else if (b.category_id) {
-                    // If we only have category_id, show ID temporarily
-                    categoryName = `Category (${b.category_id.substring(0, 8)}...)`;
-                }
+                // Get category name from the map using category_id
+                const category = categoryMap.get(b.category_id);
+                const categoryName = category ? category.name : 'Unknown Category';
                 
                 const spent = b.spent || 0;
                 const amount = b.amount || 0;
