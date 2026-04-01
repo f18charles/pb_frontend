@@ -463,19 +463,25 @@
         const container = document.getElementById('dashboardPage');
         container.innerHTML = `
             <div class="row">
-                <div class="col-md-6 col-lg-4 mb-4">
+                <div class="col-md-6 col-lg-3 mb-4">
+                    <div class="card stat-card p-3">
+                        <h6 class="text-secondary mb-2"><i class="bi bi-graph-up"></i> Balance</h6>
+                        <h2 class="text-info mb-0" id="balance">--</h2>
+                    </div>
+                </div>
+                <div class="col-md-6 col-lg-3 mb-4">
                     <div class="card stat-card p-3">
                         <h6 class="text-secondary mb-2"><i class="bi bi-calculator"></i> Net Worth</h6>
                         <h2 class="text-success mb-0" id="netWorth">--</h2>
                     </div>
                 </div>
-                <div class="col-md-6 col-lg-4 mb-4">
+                <div class="col-md-6 col-lg-3 mb-4">
                     <div class="card stat-card p-3">
                         <h6 class="text-secondary mb-2"><i class="bi bi-fire"></i> Monthly Burn</h6>
                         <h2 class="text-primary mb-0" id="monthlyBurn">--</h2>
                     </div>
                 </div>
-                <div class="col-md-6 col-lg-4 mb-4">
+                <div class="col-md-6 col-lg-3 mb-4">
                     <div class="card stat-card p-3">
                         <h6 class="text-secondary mb-2"><i class="bi bi-graph-up"></i> Savings Rate</h6>
                         <h2 class="text-info mb-0" id="savingsRate">--</h2>
@@ -516,6 +522,7 @@
             
             document.getElementById('netWorth').innerHTML = formatCurrency(overview.data.net_worth);
             document.getElementById('monthlyBurn').innerHTML = formatCurrency(overview.data.monthly_burn);
+            document.getElementById('balance').innerHTML = formatCurrency(overview.data.accounts.Balance);
             document.getElementById('savingsRate').innerHTML = `${(monthly.data?.savings_rate || 0).toFixed(1)}%`;
             
             const insights = overview.data.quick_insights || [];
