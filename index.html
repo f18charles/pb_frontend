@@ -539,14 +539,30 @@
         const insightsHtml = insights.length ? insights.map(i => `<li class="mb-2"><i class="bi bi-chat-right-quote text-success me-2"></i>${i}</li>`).join('') : '<li class="text-muted">Add transactions to see insights</li>';
         document.getElementById('quickInsights').innerHTML = insightsHtml;
         
-        // Budget health
+        // Budget health (with better category name handling)
         const budgets = overview.data.budget_health || [];
-        const budgetsHtml = budgets.length ? budgets.map(b => `
-            <div class="mb-3">
-                <div class="d-flex justify-content-between small"><span>${b.category_name}</span><span>${formatCurrency(b.spent)} / ${formatCurrency(b.budget)}</span></div>
-                <div class="progress" style="height: 8px;"><div class="progress-bar ${b.percentage > 90 ? 'bg-danger' : 'bg-success'}" style="width: ${Math.min(b.percentage, 100)}%"></div></div>
-            </div>
-        `).join('') : '<p class="text-muted">No budgets yet</p>';
+        const budgetsHtml = budgets.length ? budgets.map(b => {
+            let categoryName = b.category_name || 'Unknown';
+            const spent = b.spent || 0;
+            const budgetAmount = b.budget || 0;
+            const percentage = budgetAmount > 0 ? (spent / budgetAmount * 100) : 0;
+            const isOverBudget = percentage > 90;
+            
+            return `
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between small">
+                        <span class="fw-bold">${escapeHtml(categoryName)}</span>
+                        <span>${formatCurrency(spent)} / ${formatCurrency(budgetAmount)}</span>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar ${isOverBudget ? 'bg-danger' : 'bg-success'}" 
+                            style="width: ${Math.min(percentage, 100)}%">
+                        </div>
+                    </div>
+                    <small class="text-muted">${percentage.toFixed(1)}% used</small>
+                </div>
+            `;
+        }).join('') : '<p class="text-muted">No budgets yet. <a href="#" onclick="showPage(\'budgets\'); return false;">Create one</a></p>';
         document.getElementById('budgetHealth').innerHTML = budgetsHtml;
         
         // Recent transactions
@@ -709,51 +725,160 @@
         document.getElementById('addBudgetBtn').onclick = () => new bootstrap.Modal(document.getElementById('budgetModal')).show();
         document.getElementById('confirmBudgetBtn').onclick = createBudget;
     }
-    
+
     async function loadBudgetsList() {
-        const response = await apiFetch('/budgets');
-        const budgets = response.data || [];
-        const container = document.getElementById('budgetsList');
-        if (!budgets.length) {
-            container.innerHTML = '<div class="col-12 text-center py-5 text-muted">No budgets yet. Create your first budget!</div>';
-            return;
+        try {
+            const response = await apiFetch('/budgets');
+            const budgets = response.data || [];
+            const container = document.getElementById('budgetsList');
+            
+            // Debug: Log the actual response to see what's coming from the backend
+            console.log('Budgets API Response:', budgets);
+            
+            if (!budgets.length) {
+                container.innerHTML = '<div class="col-12 text-center py-5 text-muted">No budgets yet. Create your first budget!</div>';
+                return;
+            }
+            
+            container.innerHTML = budgets.map(b => {
+                // Try multiple ways to get the category name
+                let categoryName = 'Unknown Category';
+                
+                // Check different possible locations for category name
+                if (b.category && b.category.name) {
+                    categoryName = b.category.name;
+                } else if (b.Category && b.Category.name) {
+                    categoryName = b.Category.name;
+                } else if (b.category_name) {
+                    categoryName = b.category_name;
+                } else if (b.category_id) {
+                    // If we only have category_id, show ID temporarily
+                    categoryName = `Category (${b.category_id.substring(0, 8)}...)`;
+                }
+                
+                const spent = b.spent || 0;
+                const amount = b.amount || 0;
+                const percentage = amount > 0 ? (spent / amount * 100) : 0;
+                const isOverBudget = percentage > 90;
+                
+                return `
+                    <div class="col-md-6 mb-3">
+                        <div class="card p-3">
+                            <div class="d-flex justify-content-between align-items-start mb-2">
+                                <h6 class="fw-bold mb-0">${escapeHtml(categoryName)}</h6>
+                                <span class="badge ${isOverBudget ? 'bg-danger' : 'bg-secondary'}">${b.period || 'monthly'}</span>
+                            </div>
+                            <div class="progress mb-2" style="height: 10px;">
+                                <div class="progress-bar ${isOverBudget ? 'bg-danger' : 'bg-success'}" 
+                                    style="width: ${Math.min(percentage, 100)}%">
+                                </div>
+                            </div>
+                            <div class="d-flex justify-content-between small">
+                                <span>Spent: ${formatCurrency(spent)}</span>
+                                <span>Budget: ${formatCurrency(amount)}</span>
+                                <span class="${isOverBudget ? 'text-danger fw-bold' : 'text-muted'}">${percentage.toFixed(1)}%</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+        } catch (error) {
+            console.error('Error loading budgets:', error);
+            const container = document.getElementById('budgetsList');
+            container.innerHTML = `<div class="col-12 text-center py-5 text-danger">Error loading budgets: ${error.message}</div>`;
         }
-        container.innerHTML = budgets.map(b => `
-            <div class="col-md-6 mb-3"><div class="card p-3">
-                <h6 class="fw-bold">${b.category?.name || 'Category'}</h6>
-                <div class="progress mb-2" style="height: 10px;"><div class="progress-bar ${(b.spent/b.amount*100) > 90 ? 'bg-danger' : 'bg-success'}" style="width: ${Math.min((b.spent/b.amount*100), 100)}%"></div></div>
-                <div class="d-flex justify-content-between small"><span>Spent: ${formatCurrency(b.spent)}</span><span>Budget: ${formatCurrency(b.amount)}</span></div>
-                <span class="badge bg-secondary mt-2 w-auto">${b.period}</span>
-            </div></div>
-        `).join('');
     }
-    
+
     async function loadBudgetCategories() {
-        const response = await apiFetch('/categories');
-        const categories = (response.data || []).filter(c => c.type === 'expense');
-        const select = document.getElementById('budgetCategory');
-        if (select) select.innerHTML = '<option value="">Select category</option>' + categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+        try {
+            const response = await apiFetch('/categories');
+            const categories = (response.data || []).filter(c => c.type === 'expense');
+            const select = document.getElementById('budgetCategory');
+            if (select) {
+                if (categories.length === 0) {
+                    select.innerHTML = '<option value="">No expense categories found. Create one first!</option>';
+                } else {
+                    select.innerHTML = '<option value="">Select category</option>' + 
+                        categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+                }
+            }
+        } catch (error) {
+            console.error('Error loading budget categories:', error);
+            const select = document.getElementById('budgetCategory');
+            if (select) {
+                select.innerHTML = '<option value="">Error loading categories</option>';
+            }
+        }
     }
-    
+
     async function createBudget() {
         const categoryId = document.getElementById('budgetCategory').value;
         const amount = parseFloat(document.getElementById('budgetAmount').value);
         const period = document.getElementById('budgetPeriod').value;
-        if (!categoryId || isNaN(amount) || amount <= 0) {
-            alert('Please select a category and enter a valid amount');
+        
+        if (!categoryId) {
+            alert('Please select a category');
             return;
         }
+        if (isNaN(amount) || amount <= 0) {
+            alert('Please enter a valid budget amount');
+            return;
+        }
+        
+        // Calculate end date based on period
+        const startDate = new Date();
+        startDate.setDate(1); // First day of current month
+        const endDate = new Date();
+        if (period === 'monthly') {
+            endDate.setMonth(endDate.getMonth() + 1);
+            endDate.setDate(0); // Last day of next month
+        } else if (period === 'weekly') {
+            endDate.setDate(endDate.getDate() + 7);
+        } else {
+            endDate.setMonth(endDate.getMonth() + 1);
+            endDate.setDate(0);
+        }
+        
         try {
             await apiFetch('/budgets', {
                 method: 'POST',
-                body: JSON.stringify({ category_id: categoryId, amount, period, start_date: new Date().toISOString(), end_date: new Date(Date.now() + 30*24*60*60*1000).toISOString() })
+                body: JSON.stringify({ 
+                    category_id: categoryId, 
+                    amount, 
+                    period, 
+                    start_date: startDate.toISOString(), 
+                    end_date: endDate.toISOString() 
+                })
             });
-            bootstrap.Modal.getInstance(document.getElementById('budgetModal')).hide();
-            await loadBudgetsList();
+            
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('budgetModal'));
+            if (modal) modal.hide();
+            
+            // Clear form
             document.getElementById('budgetAmount').value = '';
+            document.getElementById('budgetCategory').value = '';
+            
+            // Reload budgets list
+            await loadBudgetsList();
+            
+            // Also refresh dashboard to update budget health section
+            if (currentPage === 'dashboard') {
+                await loadDashboard();
+            }
+            
         } catch (err) {
-            alert('Error: ' + err.message);
+            alert('Error creating budget: ' + err.message);
         }
+    }
+
+    // Helper function to escape HTML
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
     // ==================== GOALS ====================
