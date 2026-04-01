@@ -517,39 +517,56 @@
         `;
         
         try {
-            const overview = await apiFetch('/insights/overview');
-            const monthly = await apiFetch('/insights/summary/monthly');
-            
-            document.getElementById('netWorth').innerHTML = formatCurrency(overview.data.net_worth);
-            document.getElementById('monthlyBurn').innerHTML = formatCurrency(overview.data.monthly_burn);
-            document.getElementById('balance').innerHTML = formatCurrency(overview.data.accounts.balance);
-            document.getElementById('savingsRate').innerHTML = `${(monthly.data?.savings_rate || 0).toFixed(1)}%`;
-            
-            const insights = overview.data.quick_insights || [];
-            const insightsHtml = insights.length ? insights.map(i => `<li class="mb-2"><i class="bi bi-chat-right-quote text-success me-2"></i>${i}</li>`).join('') : '<li class="text-muted">Add transactions to see insights</li>';
-            document.getElementById('quickInsights').innerHTML = insightsHtml;
-            
-            const budgets = overview.data.budget_health || [];
-            const budgetsHtml = budgets.length ? budgets.map(b => `
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between small"><span>${b.category_name}</span><span>${formatCurrency(b.spent)} / ${formatCurrency(b.budget)}</span></div>
-                    <div class="progress" style="height: 8px;"><div class="progress-bar ${b.percentage > 90 ? 'bg-danger' : 'bg-success'}" style="width: ${Math.min(b.percentage, 100)}%"></div></div>
-                </div>
-            `).join('') : '<p class="text-muted">No budgets yet</p>';
-            document.getElementById('budgetHealth').innerHTML = budgetsHtml;
-            
-            const txs = overview.data.recent_transactions || [];
-            const txsHtml = txs.length ? txs.slice(0, 5).map(tx => `
-                <tr><td>${formatDate(tx.transaction_date)}</td><td>${tx.description || '—'}</td><td>${tx.category?.name || 'Uncategorized'}</td>
-                <td class="${tx.type === 'income' ? 'amount-positive' : 'amount-negative'}">${tx.type === 'income' ? '+' : '-'} ${formatCurrency(Math.abs(tx.amount))}</td></tr>
-            `).join('') : '<tr><td colspan="4" class="text-center text-muted">No transactions yet</td></tr>';
-            document.getElementById('recentTransactions').innerHTML = txsHtml;
-            
-            document.getElementById('viewAllTxBtn').onclick = () => showPage('transactions');
-        } catch (err) {
-            console.error('Dashboard error:', err);
-            document.getElementById('quickInsights').innerHTML = `<li class="text-danger">Error: ${err.message}</li>`;
-        }
+        const overview = await apiFetch('/insights/overview');
+        const monthly = await apiFetch('/insights/summary/monthly');
+        
+        // Net worth (total of all accounts)
+        document.getElementById('netWorth').innerHTML = formatCurrency(overview.data.net_worth);
+        
+        // Monthly burn (total expenses this month)
+        document.getElementById('monthlyBurn').innerHTML = formatCurrency(overview.data.monthly_burn);
+        
+        // Total balance across all accounts (same as net worth if no debts)
+        const totalBalance = overview.data.accounts.reduce((sum, account) => sum + account.balance, 0);
+        document.getElementById('balance').innerHTML = formatCurrency(totalBalance);
+        
+        // Savings rate from monthly summary
+        document.getElementById('savingsRate').innerHTML = `${(monthly.data?.savings_rate || 0).toFixed(1)}%`;
+        
+        // Quick insights
+        const insights = overview.data.quick_insights || [];
+        const insightsHtml = insights.length ? insights.map(i => `<li class="mb-2"><i class="bi bi-chat-right-quote text-success me-2"></i>${i}</li>`).join('') : '<li class="text-muted">Add transactions to see insights</li>';
+        document.getElementById('quickInsights').innerHTML = insightsHtml;
+        
+        // Budget health
+        const budgets = overview.data.budget_health || [];
+        const budgetsHtml = budgets.length ? budgets.map(b => `
+            <div class="mb-3">
+                <div class="d-flex justify-content-between small"><span>${b.category_name}</span><span>${formatCurrency(b.spent)} / ${formatCurrency(b.budget)}</span></div>
+                <div class="progress" style="height: 8px;"><div class="progress-bar ${b.percentage > 90 ? 'bg-danger' : 'bg-success'}" style="width: ${Math.min(b.percentage, 100)}%"></div></div>
+            </div>
+        `).join('') : '<p class="text-muted">No budgets yet</p>';
+        document.getElementById('budgetHealth').innerHTML = budgetsHtml;
+        
+        // Recent transactions
+        const txs = overview.data.recent_transactions || [];
+        const txsHtml = txs.length ? txs.slice(0, 5).map(tx => `
+             <tr>
+                <td>${formatDate(tx.transaction_date)}</td>
+                <td>${tx.description || '—'}</td>
+                <td>${tx.category?.name || 'Uncategorized'}</td>
+                <td class="${tx.type === 'income' ? 'amount-positive' : 'amount-negative'}">${tx.type === 'income' ? '+' : '-'} ${formatCurrency(Math.abs(tx.amount))}</td>
+             </tr>
+        `).join('') : '<tr><td colspan="4" class="text-center text-muted">No transactions yet</td></tr>';
+        document.getElementById('recentTransactions').innerHTML = txsHtml;
+        
+        // View all transactions button
+        document.getElementById('viewAllTxBtn').onclick = () => showPage('transactions');
+        
+    } catch (err) {
+        console.error('Dashboard error:', err);
+        document.getElementById('quickInsights').innerHTML = `<li class="text-danger">Error: ${err.message}</li>`;
+    }
     }
 
     // ==================== TRANSACTIONS ====================
