@@ -390,7 +390,7 @@
                             </ul>
                             <div class="tab-content">
                                 <div class="tab-pane fade show active" id="loginPanel">
-                                    <div style="background:#DEDEDE; border-radius:10px;" class="mx-2"><small>Please use email: demo@email.com, password: demo1234. <br/> You may create your own account but this demo account allows you to see a bit of what the app can do </small></div>
+                                    <div style="background:#DEDEDE; border-radius:10px;" class="mx-2"><small>Please use email: <strong>demo@email.com</strong>, password: <strong>demo1234</strong>. <br/> You may create your own account but this demo account allows you to see a bit of what the app can do </small></div>
                                     <input type="email" id="loginEmail" class="form-control mb-2" placeholder="Email">
                                     <input type="password" id="loginPassword" class="form-control mb-3" placeholder="Password">
                                     <button class="btn btn-success w-100" id="doLoginBtn">Sign In</button>
@@ -518,72 +518,125 @@
         `;
         
         try {
-        const overview = await apiFetch('/insights/overview');
-        const monthly = await apiFetch('/insights/summary/monthly');
-        
-        // Net worth (total of all accounts)
-        document.getElementById('netWorth').innerHTML = formatCurrency(overview.data.net_worth);
-        
-        // Monthly burn (total expenses this month)
-        document.getElementById('monthlyBurn').innerHTML = formatCurrency(overview.data.monthly_burn);
-        
-        // Total balance across all accounts (same as net worth if no debts)
-        const totalBalance = overview.data.accounts.reduce((sum, account) => sum + account.balance, 0);
-        document.getElementById('balance').innerHTML = formatCurrency(totalBalance);
-        
-        // Savings rate from monthly summary
-        document.getElementById('savingsRate').innerHTML = `${(monthly.data?.savings_rate || 0).toFixed(1)}%`;
-        
-        // Quick insights
-        const insights = overview.data.quick_insights || [];
-        const insightsHtml = insights.length ? insights.map(i => `<li class="mb-2"><i class="bi bi-chat-right-quote text-success me-2"></i>${i}</li>`).join('') : '<li class="text-muted">Add transactions to see insights</li>';
-        document.getElementById('quickInsights').innerHTML = insightsHtml;
-        
-        // Budget health (with better category name handling)
-        const budgets = overview.data.budget_health || [];
-        const budgetsHtml = budgets.length ? budgets.map(b => {
-            let categoryName = b.category.name || 'Unknown';
-            const spent = b.spent || 0;
-            const budgetAmount = b.budget || 0;
-            const percentage = budgetAmount > 0 ? (spent / budgetAmount * 100) : 0;
-            const isOverBudget = percentage > 90;
+            // Fetch overview, monthly summary, and categories in parallel
+            const [overview, monthly, categoriesResponse] = await Promise.all([
+                apiFetch('/insights/overview'),
+                apiFetch('/insights/summary/monthly'),
+                apiFetch('/categories')
+            ]);
             
-            return `
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between small">
-                        <span class="fw-bold">${escapeHtml(categoryName)}</span>
-                        <span>${formatCurrency(spent)} / ${formatCurrency(budgetAmount)}</span>
-                    </div>
-                    <div class="progress" style="height: 8px;">
-                        <div class="progress-bar ${isOverBudget ? 'bg-danger' : 'bg-success'}" 
-                            style="width: ${Math.min(percentage, 100)}%">
+            // Create category lookup map
+            const categories = categoriesResponse.data || [];
+            const categoryMap = new Map(categories.map(c => [c.id, c]));
+            
+            // Net worth (total of all accounts)
+            document.getElementById('netWorth').innerHTML = formatCurrency(overview.data.net_worth);
+            
+            // Monthly burn (total expenses this month)
+            document.getElementById('monthlyBurn').innerHTML = formatCurrency(overview.data.monthly_burn);
+            
+            // Total balance across all accounts (same as net worth if no debts)
+            const totalBalance = overview.data.accounts.reduce((sum, account) => sum + account.balance, 0);
+            document.getElementById('balance').innerHTML = formatCurrency(totalBalance);
+            
+            // Savings rate from monthly summary
+            document.getElementById('savingsRate').innerHTML = `${(monthly.data?.savings_rate || 0).toFixed(1)}%`;
+            
+            // Quick insights - with proper handling
+            const insights = overview.data.quick_insights || [];
+            let insightsHtml;
+            
+            if (Array.isArray(insights) && insights.length > 0) {
+                insightsHtml = insights.map(i => {
+                    // Handle both string insights and object insights
+                    const insightText = typeof i === 'string' ? i : (i.message || i.text || JSON.stringify(i));
+                    return `<li class="mb-2"><i class="bi bi-chat-right-quote text-success me-2"></i>${escapeHtml(insightText)}</li>`;
+                }).join('');
+            } else {
+                insightsHtml = '<li class="text-muted">Add transactions to see insights</li>';
+            }
+            document.getElementById('quickInsights').innerHTML = insightsHtml;
+            
+            // Budget health - using category lookup
+            const budgets = overview.data.budget_health || [];
+            let budgetsHtml;
+            
+            if (budgets.length > 0) {
+                budgetsHtml = budgets.map(b => {
+                    // Get category name from lookup map
+                    let categoryName = 'Unknown';
+                    
+                    if (b.category && b.category.name) {
+                        // If category object has name
+                        categoryName = b.category.name;
+                    } else if (b.category_id) {
+                        // Look up category by ID
+                        const category = categoryMap.get(b.category_id);
+                        categoryName = category ? category.name : 'Unknown';
+                    }
+                    
+                    const spent = b.spent || 0;
+                    const budgetAmount = b.budget || 0;
+                    const percentage = budgetAmount > 0 ? (spent / budgetAmount * 100) : 0;
+                    const isOverBudget = percentage > 90;
+                    
+                    return `
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between small">
+                                <span class="fw-bold">${escapeHtml(categoryName)}</span>
+                                <span>${formatCurrency(spent)} / ${formatCurrency(budgetAmount)}</span>
+                            </div>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar ${isOverBudget ? 'bg-danger' : 'bg-success'}" 
+                                    style="width: ${Math.min(percentage, 100)}%">
+                                </div>
+                            </div>
+                            <small class="text-muted">${percentage.toFixed(1)}% used</small>
                         </div>
-                    </div>
-                    <small class="text-muted">${percentage.toFixed(1)}% used</small>
-                </div>
-            `;
-        }).join('') : '<p class="text-muted">No budgets yet. <a href="#" onclick="showPage(\'budgets\'); return false;">Create one</a></p>';
-        document.getElementById('budgetHealth').innerHTML = budgetsHtml;
-        
-        // Recent transactions
-        const txs = overview.data.recent_transactions || [];
-        const txsHtml = txs.length ? txs.slice(0, 5).map(tx => `
-             <tr>
-                <td>${formatDate(tx.transaction_date)}</td>
-                <td>${tx.description || '—'}</td>
-                <td>${tx.category?.name || 'Uncategorized'}</td>
-                <td class="${tx.type === 'income' ? 'amount-positive' : 'amount-negative'}">${tx.type === 'income' ? '+' : '-'} ${formatCurrency(Math.abs(tx.amount))}</td>
-             </tr>
-        `).join('') : '<tr><td colspan="4" class="text-center text-muted">No transactions yet</td></tr>';
-        document.getElementById('recentTransactions').innerHTML = txsHtml;
-        
-        // View all transactions button
-        document.getElementById('viewAllTxBtn').onclick = () => showPage('transactions');
-        
-    } catch (err) {
-        console.error('Dashboard error:', err);
-        document.getElementById('quickInsights').innerHTML = `<li class="text-danger">Error: ${err.message}</li>`;
-    }
+                    `;
+                }).join('');
+            } else {
+                budgetsHtml = '<p class="text-muted">No budgets yet. <a href="#" onclick="showPage(\'budgets\'); return false;">Create one</a></p>';
+            }
+            document.getElementById('budgetHealth').innerHTML = budgetsHtml;
+            
+            // Recent transactions - using category lookup
+            const txs = overview.data.recent_transactions || [];
+            let txsHtml;
+            
+            if (txs.length > 0) {
+                txsHtml = txs.slice(0, 5).map(tx => {
+                    // Get category name from lookup
+                    let categoryName = 'Uncategorized';
+                    
+                    if (tx.category && tx.category.name) {
+                        categoryName = tx.category.name;
+                    } else if (tx.category_id) {
+                        const category = categoryMap.get(tx.category_id);
+                        categoryName = category ? category.name : 'Uncategorized';
+                    }
+                    
+                    return `
+                        <tr>
+                            <td>${formatDate(tx.transaction_date)}</td>
+                            <td>${escapeHtml(tx.description || '—')}</td>
+                            <td>${escapeHtml(categoryName)}</td>
+                            <td class="${tx.type === 'income' ? 'amount-positive' : 'amount-negative'}">${tx.type === 'income' ? '+' : '-'} ${formatCurrency(Math.abs(tx.amount))}</td>
+                        </tr>
+                    `;
+                }).join('');
+            } else {
+                txsHtml = '<tr><td colspan="4" class="text-center text-muted">No transactions yet</td></tr>';
+            }
+            document.getElementById('recentTransactions').innerHTML = txsHtml;
+            
+            // View all transactions button
+            document.getElementById('viewAllTxBtn').onclick = () => showPage('transactions');
+            
+        } catch (err) {
+            console.error('Dashboard error:', err);
+            document.getElementById('quickInsights').innerHTML = `<li class="text-danger">Error: ${err.message}</li>`;
+        }
     }
 
     // ==================== TRANSACTIONS ====================
