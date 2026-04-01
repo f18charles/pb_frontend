@@ -522,7 +522,7 @@
             
             document.getElementById('netWorth').innerHTML = formatCurrency(overview.data.net_worth);
             document.getElementById('monthlyBurn').innerHTML = formatCurrency(overview.data.monthly_burn);
-            document.getElementById('balance').innerHTML = formatCurrency(overview.data.accounts.Balance);
+            document.getElementById('balance').innerHTML = formatCurrency(overview.data.accounts.balance);
             document.getElementById('savingsRate').innerHTML = `${(monthly.data?.savings_rate || 0).toFixed(1)}%`;
             
             const insights = overview.data.quick_insights || [];
