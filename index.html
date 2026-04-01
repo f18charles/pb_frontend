@@ -525,60 +525,53 @@
                 apiFetch('/categories')
             ]);
             
-            // Create category lookup map
+            // Create category lookup map for transactions (they might not have category preloaded)
             const categories = categoriesResponse.data || [];
             const categoryMap = new Map(categories.map(c => [c.id, c]));
             
+            console.log('Dashboard Overview:', overview.data);
+            
             // Net worth (total of all accounts)
-            document.getElementById('netWorth').innerHTML = formatCurrency(overview.data.net_worth);
+            document.getElementById('netWorth').innerHTML = formatCurrency(overview.data.net_worth || 0);
             
             // Monthly burn (total expenses this month)
-            document.getElementById('monthlyBurn').innerHTML = formatCurrency(overview.data.monthly_burn);
+            document.getElementById('monthlyBurn').innerHTML = formatCurrency(overview.data.monthly_burn || 0);
             
-            // Total balance across all accounts (same as net worth if no debts)
-            const totalBalance = overview.data.accounts.reduce((sum, account) => sum + account.balance, 0);
+            // Total balance across all accounts
+            const accounts = overview.data.accounts || [];
+            const totalBalance = accounts.reduce((sum, account) => sum + (account.balance || 0), 0);
             document.getElementById('balance').innerHTML = formatCurrency(totalBalance);
             
             // Savings rate from monthly summary
-            document.getElementById('savingsRate').innerHTML = `${(monthly.data?.savings_rate || 0).toFixed(1)}%`;
+            const savingsRate = monthly.data?.savings_rate || 0;
+            document.getElementById('savingsRate').innerHTML = `${savingsRate.toFixed(1)}%`;
             
-            // Quick insights - with proper handling
+            // Quick insights - backend returns array of strings
             const insights = overview.data.quick_insights || [];
             let insightsHtml;
             
             if (Array.isArray(insights) && insights.length > 0) {
-                insightsHtml = insights.map(i => {
-                    // Handle both string insights and object insights
-                    const insightText = typeof i === 'string' ? i : (i.message || i.text || JSON.stringify(i));
-                    return `<li class="mb-2"><i class="bi bi-chat-right-quote text-success me-2"></i>${escapeHtml(insightText)}</li>`;
-                }).join('');
+                insightsHtml = insights.map(insight => 
+                    `<li class="mb-2"><i class="bi bi-chat-right-quote text-success me-2"></i>${escapeHtml(insight)}</li>`
+                ).join('');
             } else {
                 insightsHtml = '<li class="text-muted">Add transactions to see insights</li>';
             }
             document.getElementById('quickInsights').innerHTML = insightsHtml;
             
-            // Budget health - using category lookup
+            // Budget health - backend already returns category_name!
             const budgets = overview.data.budget_health || [];
             let budgetsHtml;
             
             if (budgets.length > 0) {
                 budgetsHtml = budgets.map(b => {
-                    // Get category name from lookup map
-                    let categoryName = 'Unknown';
-                    
-                    if (b.category && b.category.name) {
-                        // If category object has name
-                        categoryName = b.category.name;
-                    } else if (b.category_id) {
-                        // Look up category by ID
-                        const category = categoryMap.get(b.category_id);
-                        categoryName = category ? category.name : 'Unknown';
-                    }
-                    
+                    // Backend returns: category_name, spent, budget, percentage, color
+                    const categoryName = b.category_name || 'Unknown';
                     const spent = b.spent || 0;
                     const budgetAmount = b.budget || 0;
-                    const percentage = budgetAmount > 0 ? (spent / budgetAmount * 100) : 0;
+                    const percentage = b.percentage || 0;
                     const isOverBudget = percentage > 90;
+                    const color = b.color || '#6c757d';
                     
                     return `
                         <div class="mb-3">
@@ -587,8 +580,8 @@
                                 <span>${formatCurrency(spent)} / ${formatCurrency(budgetAmount)}</span>
                             </div>
                             <div class="progress" style="height: 8px;">
-                                <div class="progress-bar ${isOverBudget ? 'bg-danger' : 'bg-success'}" 
-                                    style="width: ${Math.min(percentage, 100)}%">
+                                <div class="progress-bar ${isOverBudget ? 'bg-danger' : ''}" 
+                                    style="width: ${Math.min(percentage, 100)}%; ${!isOverBudget ? 'background-color: ' + color : ''}">
                                 </div>
                             </div>
                             <small class="text-muted">${percentage.toFixed(1)}% used</small>
@@ -600,13 +593,13 @@
             }
             document.getElementById('budgetHealth').innerHTML = budgetsHtml;
             
-            // Recent transactions - using category lookup
+            // Recent transactions - use category lookup as they might not have category preloaded
             const txs = overview.data.recent_transactions || [];
             let txsHtml;
             
             if (txs.length > 0) {
                 txsHtml = txs.slice(0, 5).map(tx => {
-                    // Get category name from lookup
+                    // Get category name
                     let categoryName = 'Uncategorized';
                     
                     if (tx.category && tx.category.name) {
