@@ -518,18 +518,13 @@
         `;
         
         try {
-            // Fetch overview, monthly summary, and categories in parallel
-            const [overview, monthly, categoriesResponse] = await Promise.all([
+            // Fetch overview and monthly summary
+            const [overview, monthly] = await Promise.all([
                 apiFetch('/insights/overview'),
-                apiFetch('/insights/summary/monthly'),
-                apiFetch('/categories')
+                apiFetch('/insights/summary/monthly')
             ]);
             
-            // Create category lookup map for transactions (they might not have category preloaded)
-            const categories = categoriesResponse.data || [];
-            const categoryMap = new Map(categories.map(c => [c.id, c]));
-            
-            console.log('Dashboard Overview:', overview.data);
+            console.log('Overview data:', overview.data);
             
             // Net worth (total of all accounts)
             document.getElementById('netWorth').innerHTML = formatCurrency(overview.data.net_worth || 0);
@@ -546,42 +541,46 @@
             const savingsRate = monthly.data?.savings_rate || 0;
             document.getElementById('savingsRate').innerHTML = `${savingsRate.toFixed(1)}%`;
             
-            // Quick insights - backend returns array of strings
+            // Quick insights - handle array of strings
             const insights = overview.data.quick_insights || [];
             let insightsHtml;
             
             if (Array.isArray(insights) && insights.length > 0) {
-                insightsHtml = insights.map(insight => 
-                    `<li class="mb-2"><i class="bi bi-chat-right-quote text-success me-2"></i>${escapeHtml(insight)}</li>`
-                ).join('');
+                insightsHtml = insights.map(insight => {
+                    const text = typeof insight === 'string' ? insight : String(insight);
+                    return `<li class="mb-2"><i class="bi bi-chat-right-quote text-success me-2"></i>${escapeHtml(text)}</li>`;
+                }).join('');
             } else {
                 insightsHtml = '<li class="text-muted">Add transactions to see insights</li>';
             }
             document.getElementById('quickInsights').innerHTML = insightsHtml;
             
-            // Budget health - backend already returns category_name!
+            // Budget health - backend already provides category_name directly!
             const budgets = overview.data.budget_health || [];
             let budgetsHtml;
             
             if (budgets.length > 0) {
                 budgetsHtml = budgets.map(b => {
-                    // Backend returns: category_name, spent, budget, percentage, color
+                    // Backend sends: { category_name: "Food", spent: 1200, budget: 5000, ... }
                     const categoryName = b.category_name || 'Unknown';
                     const spent = b.spent || 0;
                     const budgetAmount = b.budget || 0;
                     const percentage = b.percentage || 0;
                     const isOverBudget = percentage > 90;
-                    const color = b.color || '#6c757d';
+                    const color = b.color || '#28a745';
                     
                     return `
                         <div class="mb-3">
                             <div class="d-flex justify-content-between small">
-                                <span class="fw-bold">${escapeHtml(categoryName)}</span>
+                                <span class="fw-bold">
+                                    <span class="badge rounded-circle me-2" style="background-color: ${color}; width: 12px; height: 12px;"></span>
+                                    ${escapeHtml(categoryName)}
+                                </span>
                                 <span>${formatCurrency(spent)} / ${formatCurrency(budgetAmount)}</span>
                             </div>
                             <div class="progress" style="height: 8px;">
-                                <div class="progress-bar ${isOverBudget ? 'bg-danger' : ''}" 
-                                    style="width: ${Math.min(percentage, 100)}%; ${!isOverBudget ? 'background-color: ' + color : ''}">
+                                <div class="progress-bar ${isOverBudget ? 'bg-danger' : 'bg-success'}" 
+                                    style="width: ${Math.min(percentage, 100)}%; background-color: ${isOverBudget ? '' : color}">
                                 </div>
                             </div>
                             <small class="text-muted">${percentage.toFixed(1)}% used</small>
@@ -593,28 +592,25 @@
             }
             document.getElementById('budgetHealth').innerHTML = budgetsHtml;
             
-            // Recent transactions - use category lookup as they might not have category preloaded
+            // Recent transactions - these have Category object with name
             const txs = overview.data.recent_transactions || [];
             let txsHtml;
             
             if (txs.length > 0) {
                 txsHtml = txs.slice(0, 5).map(tx => {
-                    // Get category name
-                    let categoryName = 'Uncategorized';
-                    
-                    if (tx.category && tx.category.name) {
-                        categoryName = tx.category.name;
-                    } else if (tx.category_id) {
-                        const category = categoryMap.get(tx.category_id);
-                        categoryName = category ? category.name : 'Uncategorized';
-                    }
+                    // Transaction model has Category object preloaded
+                    const categoryName = tx.category?.name || tx.Category?.name || 'Uncategorized';
+                    const description = tx.description || '—';
+                    const amount = Math.abs(tx.amount || 0);
                     
                     return `
                         <tr>
-                            <td>${formatDate(tx.transaction_date)}</td>
-                            <td>${escapeHtml(tx.description || '—')}</td>
+                            <td>${formatDate(tx.transaction_date || tx.TransactionDate || tx.created_at)}</td>
+                            <td>${escapeHtml(description)}</td>
                             <td>${escapeHtml(categoryName)}</td>
-                            <td class="${tx.type === 'income' ? 'amount-positive' : 'amount-negative'}">${tx.type === 'income' ? '+' : '-'} ${formatCurrency(Math.abs(tx.amount))}</td>
+                            <td class="${tx.type === 'income' ? 'amount-positive' : 'amount-negative'}">
+                                ${tx.type === 'income' ? '+' : '-'} ${formatCurrency(amount)}
+                            </td>
                         </tr>
                     `;
                 }).join('');
