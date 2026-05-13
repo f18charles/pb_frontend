@@ -2,19 +2,37 @@
     <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
         <h4 class="mb-0"><i class="bi bi-receipt"></i> Transactions</h4>
         <div>
-            <button class="btn btn-sm btn-outline-secondary me-2" id="exportCsvBtn"><i class="bi bi-filetype-csv"></i> CSV</button>
-            <button class="btn btn-sm btn-outline-secondary me-2" id="exportPdfBtn"><i class="bi bi-file-pdf"></i> PDF</button>
-            <button class="btn btn-sm btn-success" id="addTxBtn"><i class="bi bi-plus-lg"></i> Add Transaction</button>
+            <button class="btn btn-sm btn-outline-secondary me-2" id="exportCsvBtn">
+                <i class="bi bi-filetype-csv"></i> CSV
+            </button>
+            <button class="btn btn-sm btn-outline-secondary me-2" id="exportPdfBtn">
+                <i class="bi bi-file-pdf"></i> PDF
+            </button>
+            <button class="btn btn-sm btn-success" id="addTxBtn">
+                <i class="bi bi-plus-lg"></i> Add Transaction
+            </button>
         </div>
     </div>
-    
+
     <div class="table-responsive">
-        <table class="table table-hover">
+        <table class="table table-hover align-middle">
             <thead>
-                <tr><th>Date</th><th>Description</th><th>Category</th><th>Account</th><th>Amount</th><th>Type</th></tr>
+                <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th>Category</th>
+                    <th>Account</th>
+                    <th>Amount</th>
+                    <th>Type</th>
+                </tr>
             </thead>
             <tbody id="transactionsList">
-                <tr><td colspan="6" class="text-center py-4"><div class="spinner-border spinner-border-sm"></div> Loading...</td></tr>
+                <tr>
+                    <td colspan="6" class="text-center py-4">
+                        <div class="spinner-border spinner-border-sm text-success"></div>
+                        <span class="ms-2 text-muted">Loading…</span>
+                    </td>
+                </tr>
             </tbody>
         </table>
     </div>
@@ -22,127 +40,217 @@
 
 <!-- Add Transaction Modal -->
 <div class="modal fade" id="txModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header bg-success bg-opacity-10">
-                <h5 class="modal-title">Add Transaction</h5>
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4">
+            <div class="modal-header bg-success bg-opacity-10 border-0">
+                <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Add Transaction</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <input type="text" id="txDesc" class="form-control mb-2" placeholder="Description *">
-                <input type="number" step="0.01" id="txAmount" class="form-control mb-2" placeholder="Amount *">
-                <select id="txType" class="form-select mb-2">
-                    <option value="expense">Expense</option>
-                    <option value="income">Income</option>
+                <div id="txError" class="alert alert-danger py-2 small d-none"></div>
+
+                <label class="form-label small fw-semibold">Description *</label>
+                <input type="text" id="txDesc" class="form-control mb-3" placeholder="e.g. Grocery shopping">
+
+                <div class="row g-2 mb-3">
+                    <div class="col-7">
+                        <label class="form-label small fw-semibold">Amount (KES) *</label>
+                        <input type="number" step="0.01" min="0.01" id="txAmount" class="form-control" placeholder="0.00">
+                    </div>
+                    <div class="col-5">
+                        <label class="form-label small fw-semibold">Type *</label>
+                        <select id="txType" class="form-select">
+                            <option value="expense">Expense</option>
+                            <option value="income">Income</option>
+                        </select>
+                    </div>
+                </div>
+
+                <label class="form-label small fw-semibold">Category</label>
+                <select id="txCategory" class="form-select mb-3">
+                    <option value="">Loading categories…</option>
                 </select>
-                <select id="txCategory" class="form-select mb-2"></select>
-                <select id="txAccount" class="form-select mb-2"></select>
-                <input type="text" id="txPayment" class="form-control mb-2" placeholder="Payment Method" value="cash">
+
+                <label class="form-label small fw-semibold">Account *</label>
+                <select id="txAccount" class="form-select mb-3">
+                    <option value="">Loading accounts…</option>
+                </select>
+
+                <label class="form-label small fw-semibold">Payment Method</label>
+                <input type="text" id="txPayment" class="form-control" placeholder="e.g. cash, M-Pesa, card" value="cash">
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer border-0">
                 <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button class="btn btn-primary" id="saveTxBtn">Save</button>
+                <!-- Fix: id="saveTxBtn" is disabled during submission to prevent double-submit -->
+                <button class="btn btn-primary" id="saveTxBtn">Save Transaction</button>
             </div>
         </div>
     </div>
 </div>
 
 <script>
-let categories = [];
-let accounts = [];
+window.initTransactions = async function () {
+    // Fix: fetch list and form data in parallel — two fewer sequential round-trips.
+    await Promise.all([loadTransactionsList(), loadTxFormData()]);
 
-window.initTransactions = async function() {
-    await loadTransactions();
-    await loadFormData();
-    
     document.getElementById('addTxBtn').onclick = () => {
-        const modal = new bootstrap.Modal(document.getElementById('txModal'));
-        modal.show();
+        // Clear previous values and errors each time modal opens.
+        document.getElementById('txDesc').value    = '';
+        document.getElementById('txAmount').value  = '';
+        document.getElementById('txPayment').value = 'cash';
+        document.getElementById('txType').value    = 'expense';
+        document.getElementById('txError').classList.add('d-none');
+        new bootstrap.Modal(document.getElementById('txModal')).show();
     };
-    
-    document.getElementById('saveTxBtn').onclick = saveTransaction;
+
+    document.getElementById('saveTxBtn').onclick  = saveTransaction;
     document.getElementById('exportCsvBtn').onclick = () => exportTransactions('csv');
     document.getElementById('exportPdfBtn').onclick = () => exportTransactions('pdf');
 };
 
-async function loadTransactions() {
-    const response = await apiFetch('/transactions');
-    const txs = response.data || [];
+async function loadTransactionsList() {
     const tbody = document.getElementById('transactionsList');
-    
-    if (!txs.length) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">No transactions yet</td></tr>';
-        return;
+    try {
+        const response = await apiFetch('/transactions');
+        // Fix: backend now returns [] + 200 for empty list (not 404).
+        const txs = response.data || [];
+
+        if (!txs.length) {
+            tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-5">No transactions yet. Add your first one!</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = txs.map(tx => `
+            <tr>
+                <td class="text-nowrap">${formatDate(tx.transaction_date)}</td>
+                <td>${escapeHtml(tx.description) || '—'}</td>
+                <td>${escapeHtml(tx.category?.name) || '<span class="text-muted">Uncategorized</span>'}</td>
+                <td>${escapeHtml(tx.account?.name) || '—'}</td>
+                <td class="${tx.type === 'income' ? 'amount-positive' : 'amount-negative'} text-nowrap">
+                    ${tx.type === 'income' ? '+' : '−'} ${formatCurrency(Math.abs(tx.amount))}
+                </td>
+                <td>
+                    <span class="badge ${tx.type === 'income' ? 'bg-success' : 'bg-secondary'}">
+                        ${escapeHtml(tx.type)}
+                    </span>
+                </td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="text-center py-4">
+                    <span class="text-danger"><i class="bi bi-exclamation-triangle me-2"></i>${escapeHtml(err.message)}</span>
+                    <br>
+                    <button class="btn btn-sm btn-outline-secondary mt-2" onclick="loadTransactionsList()">Retry</button>
+                </td>
+            </tr>`;
     }
-    
-    tbody.innerHTML = txs.map(tx => `
-        <tr>
-            <td>${formatDate(tx.transaction_date)}</td>
-            <td>${tx.description || '—'}</td>
-            <td>${tx.category?.name || 'Uncategorized'}</td>
-            <td>${tx.account?.name || '—'}</td>
-            <td class="${tx.type === 'income' ? 'amount-positive' : 'amount-negative'}">
-                ${tx.type === 'income' ? '+' : '-'} ${formatCurrency(Math.abs(tx.amount))}
-            </td>
-            <td><span class="badge ${tx.type === 'income' ? 'bg-success' : 'bg-secondary'}">${tx.type}</span></td>
-        </tr>
-    `).join('');
 }
 
-async function loadFormData() {
-    const cats = await apiFetch('/categories');
-    const accs = await apiFetch('/accounts');
-    categories = cats.data || [];
-    accounts = accs.data || [];
-    
-    document.getElementById('txCategory').innerHTML = '<option value="">Select category</option>' + 
-        categories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-    document.getElementById('txAccount').innerHTML = accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('');
+async function loadTxFormData() {
+    try {
+        // Fix: fetch categories and accounts in parallel.
+        const [catsRes, accsRes] = await Promise.all([
+            apiFetch('/categories'),
+            apiFetch('/accounts'),
+        ]);
+
+        const categories = catsRes.data || [];
+        const accounts   = accsRes.data || [];
+
+        document.getElementById('txCategory').innerHTML =
+            '<option value="">No category</option>' +
+            categories.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('');
+
+        document.getElementById('txAccount').innerHTML =
+            accounts.length
+                ? accounts.map(a => `<option value="${a.id}">${escapeHtml(a.name)}</option>`).join('')
+                : '<option value="">No accounts found</option>';
+    } catch (err) {
+        showToast('Could not load form data: ' + err.message);
+    }
 }
 
 async function saveTransaction() {
+    const btn    = document.getElementById('saveTxBtn');
+    const errBox = document.getElementById('txError');
+
     const data = {
-        description: document.getElementById('txDesc').value,
-        amount: parseFloat(document.getElementById('txAmount').value),
-        type: document.getElementById('txType').value,
-        category_id: document.getElementById('txCategory').value || null,
-        account_id: document.getElementById('txAccount').value,
-        payment_method: document.getElementById('txPayment').value,
-        reference_id: `web_${Date.now()}`,
-        status: 'completed'
+        description:    document.getElementById('txDesc').value.trim(),
+        amount:         parseFloat(document.getElementById('txAmount').value),
+        type:           document.getElementById('txType').value,
+        category_id:    document.getElementById('txCategory').value || null,
+        account_id:     document.getElementById('txAccount').value,
+        payment_method: document.getElementById('txPayment').value.trim() || 'cash',
+        reference_id:   `web_${Date.now()}`,
+        status:         'completed',
     };
-    
-    if (!data.description || isNaN(data.amount) || !data.account_id) {
-        alert('Please fill all required fields');
+
+    errBox.classList.add('d-none');
+
+    if (!data.description) {
+        errBox.textContent = 'Description is required.';
+        errBox.classList.remove('d-none');
         return;
     }
-    
+    if (isNaN(data.amount) || data.amount <= 0) {
+        errBox.textContent = 'Please enter a valid amount greater than 0.';
+        errBox.classList.remove('d-none');
+        return;
+    }
+    if (!data.account_id) {
+        errBox.textContent = 'Please select an account.';
+        errBox.classList.remove('d-none');
+        return;
+    }
+
+    // Fix: disable button to prevent double-submit while the request is in flight.
+    const originalText = btn.innerHTML;
+    setButtonLoading(btn, true);
     try {
         await apiFetch('/transactions', { method: 'POST', body: JSON.stringify(data) });
         bootstrap.Modal.getInstance(document.getElementById('txModal')).hide();
-        await loadTransactions();
-        document.getElementById('txDesc').value = '';
-        document.getElementById('txAmount').value = '';
+        showToast('Transaction saved!', 'success');
+        await loadTransactionsList();
     } catch (err) {
-        alert('Error: ' + err.message);
+        errBox.textContent = err.message;
+        errBox.classList.remove('d-none');
+    } finally {
+        setButtonLoading(btn, false, originalText);
     }
 }
 
 async function exportTransactions(format) {
+    const btnId = format === 'csv' ? 'exportCsvBtn' : 'exportPdfBtn';
+    const btn   = document.getElementById(btnId);
+    const orig  = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span>`;
+
     try {
         const response = await fetch(`${API_BASE}/transactions/export?format=${format}`, {
-            headers: { 'Authorization': `Bearer ${authToken}` }
+            headers: { 'Authorization': `Bearer ${Auth.accessToken}` },
         });
+        if (!response.ok) {
+            const json = await response.json().catch(() => ({}));
+            throw new Error(json.error || `Export failed (${response.status})`);
+        }
         const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
         a.download = `transactions.${format}`;
         document.body.appendChild(a);
         a.click();
-        window.URL.revokeObjectURL(url);
+        URL.revokeObjectURL(url);
+        a.remove();
+        showToast(`Export downloaded as ${format.toUpperCase()}`, 'success');
     } catch (err) {
-        alert('Export failed: ' + err.message);
+        showToast('Export failed: ' + err.message);
+    } finally {
+        btn.disabled  = false;
+        btn.innerHTML = orig;
     }
 }
 </script>
