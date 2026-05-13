@@ -1,74 +1,272 @@
-<div class="card p-4 mb-4">
-    <h4><i class="bi bi-graph-up"></i> Spending Insights</h4>
-    <p class="text-muted">Based on your last 90 days of transactions</p>
-    
-    <div class="row">
-        <div class="col-md-6 mb-4">
-            <canvas id="categoryChart" style="max-height: 300px;"></canvas>
-        </div>
-        <div class="col-md-6">
-            <h6>📊 Spending Patterns</h6>
-            <div id="patterns"></div>
-            <h6 class="mt-3">⚠️ Unusual Transactions</h6>
-            <div id="anomalies"></div>
+<div class="card p-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+        <h4 class="mb-0"><i class="bi bi-bar-chart-line"></i> Spending Insights</h4>
+        <div class="d-flex gap-2">
+            <select id="insightYear" class="form-select form-select-sm" style="width:auto;">
+                <option value="">This Month</option>
+            </select>
         </div>
     </div>
-    
-    <h6 class="mt-3">💡 Recommendations</h6>
-    <div id="recommendations"></div>
+
+    <div id="insightsSummary" class="row mb-4 g-3">
+        <div class="col-12 text-center py-4">
+            <div class="spinner-border text-success"></div>
+        </div>
+    </div>
+
+    <!-- Category breakdown chart -->
+    <div class="row">
+        <div class="col-lg-7 mb-4">
+            <div class="card p-3 h-100">
+                <h6 class="fw-semibold mb-3">Spending by Category</h6>
+                <!-- Fix: canvas lives here permanently — no innerHTML destroy/recreate.
+                     chartInstance.destroy() is called safely before each Chart.js init. -->
+                <div style="position:relative; height:280px;">
+                    <canvas id="insightsChart"></canvas>
+                </div>
+                <p id="insightsChartEmpty" class="text-muted text-center small mt-3 d-none">
+                    No expense data for this period.
+                </p>
+            </div>
+        </div>
+        <div class="col-lg-5 mb-4">
+            <div class="card p-3 h-100">
+                <h6 class="fw-semibold mb-3">Category Breakdown</h6>
+                <div id="categoryBreakdown">
+                    <div class="text-center py-3"><div class="spinner-border spinner-border-sm text-success"></div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Monthly trend -->
+    <div class="card p-3">
+        <h6 class="fw-semibold mb-3">Monthly Income vs Expenses</h6>
+        <div style="position:relative; height:220px;">
+            <canvas id="trendChart"></canvas>
+        </div>
+    </div>
 </div>
 
 <script>
-let insightsChart = null;
+// Fix: module-scoped chart instances so destroy() is always called before re-init,
+// even across repeated navigations to this page without a full reload.
+let _insightChart = null;
+let _trendChart   = null;
 
-window.initInsights = async function() {
-    try {
-        const response = await apiFetch('/insights/spending?days=90');
-        const data = response.data;
-        
-        // Category chart
-        const topCats = data.top_categories || [];
-        if (topCats.length) {
-            const ctx = document.getElementById('categoryChart').getContext('2d');
-            if (insightsChart) insightsChart.destroy();
-            insightsChart = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: topCats.map(c => c.category_name),
-                    datasets: [{
-                        data: topCats.map(c => c.total_spent),
-                        backgroundColor: ['#2c6e2f', '#7bc5d9', '#e9b35f', '#6c9e6f', '#c96b3a']
-                    }]
-                }
-            });
-        } else {
-            document.getElementById('categoryChart').parentElement.innerHTML = '<p class="text-muted">No spending data available</p>';
-        }
-        
-        // Patterns
-        const patterns = data.spending_patterns || {};
-        document.getElementById('patterns').innerHTML = `
-            <p><strong>Most active day:</strong> ${patterns.most_active_day || 'N/A'}</p>
-            <p><strong>Peak spending hour:</strong> ${patterns.peak_hour || 'N/A'}:00</p>
-            <p><strong>Weekday avg:</strong> ${formatCurrency(patterns.avg_weekday_spend || 0)}</p>
-            <p><strong>Weekend avg:</strong> ${formatCurrency(patterns.avg_weekend_spend || 0)}</p>
-        `;
-        
-        // Anomalies
-        const anomalies = data.anomalies || [];
-        document.getElementById('anomalies').innerHTML = anomalies.length ? 
-            anomalies.map(a => `<div class="small mb-2">⚠️ ${formatDate(a.date)}: ${a.description} - ${formatCurrency(a.amount)} (expected ~${formatCurrency(a.expected_amount)})</div>`).join('') :
-            '<p class="text-muted">No unusual spending detected</p>';
-        
-        // Recommendations
-        const recs = data.recommendations || [];
-        document.getElementById('recommendations').innerHTML = recs.length ?
-            `<ul class="list-unstyled">${recs.map(r => `<li class="mb-2"><i class="bi bi-lightbulb text-warning me-2"></i>${r}</li>`).join('')}</ul>` :
-            '<p class="text-muted">Add more transactions for personalized recommendations</p>';
-            
-    } catch (err) {
-        console.error('Insights error:', err);
-        document.getElementById('patterns').innerHTML = `<p class="text-danger">Error loading insights: ${err.message}</p>`;
+window.initInsights = async function () {
+    // Populate year selector.
+    const yearSel = document.getElementById('insightYear');
+    const now     = new Date();
+    for (let y = now.getFullYear(); y >= now.getFullYear() - 3; y--) {
+        const opt      = document.createElement('option');
+        opt.value      = y;
+        opt.textContent= y;
+        if (y === now.getFullYear()) opt.selected = true;
+        yearSel.appendChild(opt);
     }
+
+    yearSel.onchange = () => loadInsights();
+    await loadInsights();
 };
+
+async function loadInsights() {
+    const yearSel = document.getElementById('insightYear');
+    const year    = yearSel.value;
+    const now     = new Date();
+
+    try {
+        let summaryData;
+        if (year) {
+            const res = await apiFetch(`/summary/yearly?year=${year}`);
+            summaryData = res.data;
+            renderTrendChart(summaryData);
+            // Use current month's data for the pie chart.
+            const currentMonth = summaryData.find(m => m.month === now.getMonth() + 1)
+                              || summaryData[summaryData.length - 1];
+            renderSummaryCards(currentMonth);
+            renderCategoryBreakdown(currentMonth);
+            renderPieChart(currentMonth);
+        } else {
+            const res = await apiFetch(`/summary/monthly?year=${now.getFullYear()}&month=${now.getMonth() + 1}`);
+            summaryData = res.data;
+            renderSummaryCards(summaryData);
+            renderCategoryBreakdown(summaryData);
+            renderPieChart(summaryData);
+            clearTrendChart();
+        }
+    } catch (err) {
+        document.getElementById('insightsSummary').innerHTML = `
+            <div class="col-12 text-center py-4">
+                <span class="text-danger"><i class="bi bi-exclamation-triangle me-2"></i>${escapeHtml(err.message)}</span>
+                <br><button class="btn btn-sm btn-outline-secondary mt-2" onclick="loadInsights()">Retry</button>
+            </div>`;
+    }
+}
+
+function renderSummaryCards(data) {
+    if (!data) return;
+    const savings    = (data.income || 0) - (data.expenses || 0);
+    const savingsRate= data.savings_rate ? data.savings_rate.toFixed(1) : '0.0';
+
+    document.getElementById('insightsSummary').innerHTML = `
+        <div class="col-sm-4">
+            <div class="card p-3 text-center border-0 bg-success bg-opacity-10">
+                <div class="text-success fw-bold fs-5">${formatCurrency(data.income || 0)}</div>
+                <div class="small text-muted">Total Income</div>
+            </div>
+        </div>
+        <div class="col-sm-4">
+            <div class="card p-3 text-center border-0 bg-danger bg-opacity-10">
+                <div class="text-danger fw-bold fs-5">${formatCurrency(data.expenses || 0)}</div>
+                <div class="small text-muted">Total Expenses</div>
+            </div>
+        </div>
+        <div class="col-sm-4">
+            <div class="card p-3 text-center border-0 ${savings >= 0 ? 'bg-info bg-opacity-10' : 'bg-warning bg-opacity-10'}">
+                <div class="fw-bold fs-5 ${savings >= 0 ? 'text-info' : 'text-warning'}">${formatCurrency(savings)}</div>
+                <div class="small text-muted">Net Savings (${savingsRate}%)</div>
+            </div>
+        </div>`;
+}
+
+function renderCategoryBreakdown(data) {
+    const container = document.getElementById('categoryBreakdown');
+    const byCategory = data?.by_category || {};
+    const entries    = Object.values(byCategory);
+
+    if (!entries.length) {
+        container.innerHTML = '<p class="text-muted small text-center">No expense data.</p>';
+        return;
+    }
+
+    entries.sort((a, b) => b.spent - a.spent);
+
+    container.innerHTML = entries.slice(0, 8).map(cat => {
+        const pct    = Math.min(cat.percentage || 0, 100);
+        const budget = cat.budget ? ` / ${formatCurrency(cat.budget)}` : '';
+        return `
+            <div class="mb-2">
+                <div class="d-flex justify-content-between small mb-1">
+                    <span class="fw-semibold">${escapeHtml(cat.category_name)}</span>
+                    <span class="text-muted">${formatCurrency(cat.spent)}${budget}</span>
+                </div>
+                <div class="progress" style="height:6px;">
+                    <div class="progress-bar"
+                         style="width:${pct.toFixed(1)}%; background:${escapeHtml(cat.category_color || '#198754')};">
+                    </div>
+                </div>
+            </div>`;
+    }).join('');
+}
+
+function renderPieChart(data) {
+    const byCategory = data?.by_category || {};
+    const entries    = Object.values(byCategory).filter(c => c.spent > 0);
+    const canvas     = document.getElementById('insightsChart');
+    const emptyMsg   = document.getElementById('insightsChartEmpty');
+
+    // Fix: always destroy the previous chart instance before creating a new one,
+    // even across page navigations. Previously the canvas was rebuilt via innerHTML
+    // which left the old Chart.js instance dangling and caused a crash on re-render.
+    if (_insightChart) {
+        _insightChart.destroy();
+        _insightChart = null;
+    }
+
+    if (!entries.length) {
+        canvas.style.display = 'none';
+        emptyMsg.classList.remove('d-none');
+        return;
+    }
+
+    canvas.style.display = '';
+    emptyMsg.classList.add('d-none');
+
+    _insightChart = new Chart(canvas, {
+        type: 'doughnut',
+        data: {
+            labels: entries.map(c => c.category_name),
+            datasets: [{
+                data:            entries.map(c => c.spent),
+                backgroundColor: entries.map(c => c.category_color || '#198754'),
+                borderWidth: 2,
+                borderColor: '#fff',
+            }],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { position: 'right', labels: { boxWidth: 12, padding: 10 } },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => ` ${formatCurrency(ctx.parsed)} (${ctx.label})`,
+                    },
+                },
+            },
+        },
+    });
+}
+
+function renderTrendChart(monthlySummaries) {
+    const canvas = document.getElementById('trendChart');
+
+    if (_trendChart) {
+        _trendChart.destroy();
+        _trendChart = null;
+    }
+
+    if (!monthlySummaries?.length) return;
+
+    const months       = monthlySummaries.map(m => {
+        const d = new Date(2000, (m.month || 1) - 1);
+        return d.toLocaleString('default', { month: 'short' });
+    });
+    const incomes      = monthlySummaries.map(m => m.income   || 0);
+    const expenses     = monthlySummaries.map(m => m.expenses || 0);
+
+    _trendChart = new Chart(canvas, {
+        type: 'bar',
+        data: {
+            labels: months,
+            datasets: [
+                {
+                    label: 'Income',
+                    data: incomes,
+                    backgroundColor: 'rgba(25,135,84,0.7)',
+                    borderRadius: 4,
+                },
+                {
+                    label: 'Expenses',
+                    data: expenses,
+                    backgroundColor: 'rgba(220,53,69,0.7)',
+                    borderRadius: 4,
+                },
+            ],
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: 'top' } },
+            scales: {
+                y: {
+                    ticks: {
+                        callback: v => `KES ${v.toLocaleString()}`,
+                    },
+                },
+            },
+        },
+    });
+}
+
+function clearTrendChart() {
+    if (_trendChart) {
+        _trendChart.destroy();
+        _trendChart = null;
+    }
+    const canvas = document.getElementById('trendChart');
+    const ctx    = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
 </script>

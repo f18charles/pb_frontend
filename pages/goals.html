@@ -1,9 +1,11 @@
 <div class="card p-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h4><i class="bi bi-trophy"></i> Savings Goals</h4>
-        <button class="btn btn-sm btn-success" id="addGoalBtn"><i class="bi bi-plus-lg"></i> Add Goal</button>
+        <h4 class="mb-0"><i class="bi bi-trophy"></i> Savings Goals</h4>
+        <button class="btn btn-sm btn-success" id="addGoalBtn">
+            <i class="bi bi-plus-lg"></i> Add Goal
+        </button>
     </div>
-    
+
     <div id="goalsList" class="row">
         <div class="col-12 text-center py-5">
             <div class="spinner-border text-success"></div>
@@ -11,61 +13,153 @@
     </div>
 </div>
 
+<!-- Add Goal Modal -->
+<!-- Fix: replaces window.prompt() calls which break on mobile and in iframes -->
+<div class="modal fade" id="goalModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4">
+            <div class="modal-header bg-success bg-opacity-10 border-0">
+                <h5 class="modal-title"><i class="bi bi-trophy me-2"></i>Add Savings Goal</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="goalError" class="alert alert-danger py-2 small d-none"></div>
+
+                <label class="form-label small fw-semibold">Goal Name *</label>
+                <input type="text" id="goalName" class="form-control mb-3" placeholder="e.g. Emergency Fund">
+
+                <label class="form-label small fw-semibold">Target Amount (KES) *</label>
+                <input type="number" step="0.01" min="1" id="goalTarget" class="form-control mb-3" placeholder="e.g. 100000">
+
+                <label class="form-label small fw-semibold">Starting Amount (KES)</label>
+                <input type="number" step="0.01" min="0" id="goalCurrent" class="form-control mb-3" placeholder="0.00" value="0">
+
+                <label class="form-label small fw-semibold">Deadline <span class="text-muted">(optional)</span></label>
+                <input type="date" id="goalDeadline" class="form-control">
+            </div>
+            <div class="modal-footer border-0">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary" id="saveGoalBtn">Save Goal</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-window.initGoals = async function() {
+window.initGoals = async function () {
     await loadGoals();
-    document.getElementById('addGoalBtn').onclick = addGoal;
+
+    document.getElementById('addGoalBtn').onclick = () => {
+        document.getElementById('goalName').value     = '';
+        document.getElementById('goalTarget').value   = '';
+        document.getElementById('goalCurrent').value  = '0';
+        document.getElementById('goalDeadline').value = '';
+        document.getElementById('goalError').classList.add('d-none');
+        new bootstrap.Modal(document.getElementById('goalModal')).show();
+    };
+
+    document.getElementById('saveGoalBtn').onclick = saveGoal;
 };
 
 async function loadGoals() {
-    const response = await apiFetch('/goals');
-    const goals = response.data || [];
     const container = document.getElementById('goalsList');
-    
-    if (!goals.length) {
-        container.innerHTML = '<div class="col-12 text-center py-5 text-muted">No goals yet. Set a savings goal!</div>';
-        return;
+    try {
+        const response = await apiFetch('/goals');
+        const goals    = response.data || [];
+
+        if (!goals.length) {
+            container.innerHTML = `
+                <div class="col-12 text-center py-5 text-muted">
+                    <i class="bi bi-trophy fs-1 d-block mb-3 opacity-25"></i>
+                    No goals yet. Set your first savings goal!
+                </div>`;
+            return;
+        }
+
+        container.innerHTML = goals.map(g => {
+            const pct     = g.target_amount > 0
+                ? Math.min((g.current_amount / g.target_amount) * 100, 100)
+                : 0;
+            const barCls  = pct >= 100 ? 'bg-success' : 'bg-info';
+            const badge   = pct >= 100
+                ? '<span class="badge bg-success ms-1">Achieved!</span>'
+                : '';
+            return `
+                <div class="col-md-6 mb-3">
+                    <div class="card p-3 h-100">
+                        <div class="d-flex align-items-center mb-2">
+                            <h5 class="fw-bold mb-0">🎯 ${escapeHtml(g.name)}</h5>
+                            ${badge}
+                        </div>
+                        <div class="progress mb-2" style="height:12px;">
+                            <div class="progress-bar ${barCls}" style="width:${pct.toFixed(1)}%"></div>
+                        </div>
+                        <div class="d-flex justify-content-between small text-muted">
+                            <span>Saved: ${formatCurrency(g.current_amount)}</span>
+                            <span>Target: ${formatCurrency(g.target_amount)}</span>
+                        </div>
+                        <small class="text-muted mt-1">${pct.toFixed(1)}% complete</small>
+                        ${g.deadline ? `<small class="text-muted">Deadline: ${formatDate(g.deadline)}</small>` : ''}
+                    </div>
+                </div>`;
+        }).join('');
+    } catch (err) {
+        container.innerHTML = `
+            <div class="col-12 text-center py-4">
+                <span class="text-danger"><i class="bi bi-exclamation-triangle me-2"></i>${escapeHtml(err.message)}</span>
+                <br>
+                <button class="btn btn-sm btn-outline-secondary mt-2" onclick="loadGoals()">Retry</button>
+            </div>`;
     }
-    
-    container.innerHTML = goals.map(g => {
-        const percent = (g.current_amount / g.target_amount * 100).toFixed(1);
-        return `
-            <div class="col-md-6 mb-3">
-                <div class="card p-3">
-                    <h5 class="fw-bold">🎯 ${g.name}</h5>
-                    <div class="progress mb-2" style="height: 12px;">
-                        <div class="progress-bar bg-info" style="width: ${Math.min(percent, 100)}%"></div>
-                    </div>
-                    <div class="d-flex justify-content-between">
-                        <span>Saved: ${formatCurrency(g.current_amount)}</span>
-                        <span>Target: ${formatCurrency(g.target_amount)}</span>
-                    </div>
-                    <small class="text-muted mt-2">${percent}% complete</small>
-                    ${g.deadline ? `<small class="text-muted">Deadline: ${formatDate(g.deadline)}</small>` : ''}
-                </div>
-            </div>
-        `;
-    }).join('');
 }
 
-async function addGoal() {
-    const name = prompt('Goal name:');
-    if (!name) return;
-    const target = parseFloat(prompt('Target amount (KES):'));
-    if (isNaN(target)) return;
-    
+async function saveGoal() {
+    const btn     = document.getElementById('saveGoalBtn');
+    const errBox  = document.getElementById('goalError');
+    const name    = document.getElementById('goalName').value.trim();
+    const target  = parseFloat(document.getElementById('goalTarget').value);
+    const current = parseFloat(document.getElementById('goalCurrent').value) || 0;
+    const deadline= document.getElementById('goalDeadline').value;
+
+    errBox.classList.add('d-none');
+
+    if (!name) {
+        errBox.textContent = 'Goal name is required.';
+        errBox.classList.remove('d-none');
+        return;
+    }
+    if (isNaN(target) || target <= 0) {
+        errBox.textContent = 'Please enter a valid target amount.';
+        errBox.classList.remove('d-none');
+        return;
+    }
+    if (current < 0) {
+        errBox.textContent = 'Starting amount cannot be negative.';
+        errBox.classList.remove('d-none');
+        return;
+    }
+
+    // Fix: disable button while saving to prevent double-submit.
+    const originalText = btn.innerHTML;
+    setButtonLoading(btn, true);
     try {
         await apiFetch('/goals', {
             method: 'POST',
             body: JSON.stringify({
-                name: name,
-                target_amount: target,
-                current_amount: 0
-            })
+                name,
+                target_amount:  target,
+                current_amount: current,
+                ...(deadline ? { deadline: new Date(deadline).toISOString() } : {}),
+            }),
         });
+        bootstrap.Modal.getInstance(document.getElementById('goalModal')).hide();
+        showToast('Goal saved!', 'success');
         await loadGoals();
     } catch (err) {
-        alert('Error: ' + err.message);
+        errBox.textContent = err.message;
+        errBox.classList.remove('d-none');
+    } finally {
+        setButtonLoading(btn, false, originalText);
     }
 }
 </script>

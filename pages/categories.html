@@ -1,58 +1,195 @@
 <div class="card p-4">
     <div class="d-flex justify-content-between align-items-center mb-4">
-        <h4><i class="bi bi-tags"></i> Categories</h4>
-        <button class="btn btn-sm btn-success" id="addCategoryBtn"><i class="bi bi-plus-lg"></i> Add Category</button>
+        <h4 class="mb-0"><i class="bi bi-tags"></i> Categories</h4>
+        <button class="btn btn-sm btn-success" id="addCategoryBtn">
+            <i class="bi bi-plus-lg"></i> Add Category
+        </button>
     </div>
-    
+
     <div class="table-responsive">
-        <table class="table table-hover">
+        <table class="table table-hover align-middle">
             <thead>
-                <tr><th>Name</th><th>Type</th><th>Color</th><th>Icon</th></tr>
+                <tr>
+                    <th>Name</th>
+                    <th>Type</th>
+                    <th>Color</th>
+                    <th>Icon</th>
+                </tr>
             </thead>
             <tbody id="categoriesList">
-                <tr><td colspan="4" class="text-center"><div class="spinner-border spinner-border-sm"></div> Loading...</td></tr>
+                <tr>
+                    <td colspan="4" class="text-center py-4">
+                        <div class="spinner-border spinner-border-sm text-success"></div>
+                        <span class="ms-2 text-muted">Loading…</span>
+                    </td>
+                </tr>
             </tbody>
         </table>
     </div>
 </div>
 
+<!-- Add Category Modal -->
+<!-- Fix: replaces the chain of 4 window.prompt() calls which break on mobile/iframes -->
+<div class="modal fade" id="categoryModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content rounded-4">
+            <div class="modal-header bg-success bg-opacity-10 border-0">
+                <h5 class="modal-title"><i class="bi bi-tag me-2"></i>Add Category</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="catError" class="alert alert-danger py-2 small d-none"></div>
+
+                <label class="form-label small fw-semibold">Name *</label>
+                <input type="text" id="catName" class="form-control mb-3" placeholder="e.g. Groceries">
+
+                <label class="form-label small fw-semibold">Type *</label>
+                <select id="catType" class="form-select mb-3">
+                    <option value="expense">Expense</option>
+                    <option value="income">Income</option>
+                </select>
+
+                <label class="form-label small fw-semibold">Color</label>
+                <div class="input-group mb-3">
+                    <input type="color" id="catColorPicker" class="form-control form-control-color" value="#2c6e2f" title="Pick a colour">
+                    <input type="text"  id="catColor" class="form-control" value="#2c6e2f" placeholder="#rrggbb" maxlength="7">
+                </div>
+
+                <label class="form-label small fw-semibold">
+                    Icon
+                    <a href="https://icons.getbootstrap.com/" target="_blank" rel="noopener"
+                       class="text-muted small ms-1"><i class="bi bi-box-arrow-up-right"></i> Browse icons</a>
+                </label>
+                <input type="text" id="catIcon" class="form-control" placeholder="e.g. cart, house, car-front" value="tag">
+                <div class="mt-2">
+                    Preview: <i id="catIconPreview" class="bi bi-tag ms-1"></i>
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button class="btn btn-primary" id="saveCategoryBtn">Save Category</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
-window.initCategories = async function() {
+window.initCategories = async function () {
     await loadCategories();
-    document.getElementById('addCategoryBtn').onclick = addCategory;
+
+    document.getElementById('addCategoryBtn').onclick = () => {
+        document.getElementById('catName').value          = '';
+        document.getElementById('catType').value          = 'expense';
+        document.getElementById('catColor').value         = '#2c6e2f';
+        document.getElementById('catColorPicker').value   = '#2c6e2f';
+        document.getElementById('catIcon').value          = 'tag';
+        document.getElementById('catIconPreview').className = 'bi bi-tag ms-1';
+        document.getElementById('catError').classList.add('d-none');
+        new bootstrap.Modal(document.getElementById('categoryModal')).show();
+    };
+
+    // Keep color picker and text input in sync.
+    document.getElementById('catColorPicker').oninput = function () {
+        document.getElementById('catColor').value = this.value;
+    };
+    document.getElementById('catColor').oninput = function () {
+        if (/^#[0-9a-fA-F]{6}$/.test(this.value)) {
+            document.getElementById('catColorPicker').value = this.value;
+        }
+    };
+
+    // Live icon preview.
+    document.getElementById('catIcon').oninput = function () {
+        document.getElementById('catIconPreview').className = `bi bi-${this.value.trim() || 'tag'} ms-1`;
+    };
+
+    document.getElementById('saveCategoryBtn').onclick = saveCategory;
 };
 
 async function loadCategories() {
-    const response = await apiFetch('/categories');
-    const categories = response.data || [];
     const tbody = document.getElementById('categoriesList');
-    
-    tbody.innerHTML = categories.map(c => `
-        <tr>
-            <td><i class="bi bi-${c.icon || 'tag'} me-2"></i> ${c.name}</td>
-            <td><span class="badge ${c.type === 'income' ? 'bg-success' : 'bg-secondary'}">${c.type}</span></td>
-            <td><span style="background:${c.color || '#ccc'}; width:24px;height:24px;display:inline-block;border-radius:50%;"></span> ${c.color || 'default'}</td>
-            <td>${c.icon || 'tag'}</td>
-        </tr>
-    `).join('');
+    try {
+        const response   = await apiFetch('/categories');
+        const categories = response.data || [];
+
+        if (!categories.length) {
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-5">No categories yet.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = categories.map(c => `
+            <tr>
+                <td>
+                    <i class="bi bi-${escapeHtml(c.icon || 'tag')} me-2"
+                       style="color:${escapeHtml(c.color || '#888')}"></i>
+                    ${escapeHtml(c.name)}
+                </td>
+                <td>
+                    <span class="badge ${c.type === 'income' ? 'bg-success' : 'bg-secondary'}">
+                        ${escapeHtml(c.type)}
+                    </span>
+                </td>
+                <td>
+                    <span style="background:${escapeHtml(c.color || '#ccc')};
+                                 width:20px; height:20px;
+                                 display:inline-block;
+                                 border-radius:50%;
+                                 vertical-align:middle;
+                                 margin-right:6px;"></span>
+                    <code class="small">${escapeHtml(c.color || '—')}</code>
+                </td>
+                <td><code class="small">${escapeHtml(c.icon || 'tag')}</code></td>
+            </tr>
+        `).join('');
+    } catch (err) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="4" class="text-center py-4">
+                    <span class="text-danger"><i class="bi bi-exclamation-triangle me-2"></i>${escapeHtml(err.message)}</span>
+                    <br>
+                    <button class="btn btn-sm btn-outline-secondary mt-2" onclick="loadCategories()">Retry</button>
+                </td>
+            </tr>`;
+    }
 }
 
-async function addCategory() {
-    const name = prompt('Category name:');
-    if (!name) return;
-    const type = prompt('Type (expense/income):', 'expense');
-    if (!['expense', 'income'].includes(type)) return alert('Type must be expense or income');
-    const color = prompt('Color (hex, e.g., #2c6e2f):', '#2c6e2f');
-    const icon = prompt('Icon name (bootstrap icon, e.g., cart):', 'tag');
-    
+async function saveCategory() {
+    const btn    = document.getElementById('saveCategoryBtn');
+    const errBox = document.getElementById('catError');
+    const name   = document.getElementById('catName').value.trim();
+    const type   = document.getElementById('catType').value;
+    const color  = document.getElementById('catColor').value.trim() || '#2c6e2f';
+    const icon   = document.getElementById('catIcon').value.trim()  || 'tag';
+
+    errBox.classList.add('d-none');
+
+    if (!name) {
+        errBox.textContent = 'Category name is required.';
+        errBox.classList.remove('d-none');
+        return;
+    }
+    if (!['expense', 'income'].includes(type)) {
+        errBox.textContent = 'Type must be expense or income.';
+        errBox.classList.remove('d-none');
+        return;
+    }
+
+    // Fix: disable button to prevent double-submit.
+    const originalText = btn.innerHTML;
+    setButtonLoading(btn, true);
     try {
         await apiFetch('/categories', {
             method: 'POST',
-            body: JSON.stringify({ name, type, color, icon })
+            body: JSON.stringify({ name, type, color, icon }),
         });
+        bootstrap.Modal.getInstance(document.getElementById('categoryModal')).hide();
+        showToast('Category added!', 'success');
         await loadCategories();
     } catch (err) {
-        alert('Error: ' + err.message);
+        errBox.textContent = err.message;
+        errBox.classList.remove('d-none');
+    } finally {
+        setButtonLoading(btn, false, originalText);
     }
 }
 </script>
